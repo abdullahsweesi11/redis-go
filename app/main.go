@@ -13,30 +13,7 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-func handleEcho(conn *net.Conn, readBuffer []byte, n int) {
-	j := 1
-	for j < n && unicode.IsDigit(rune(readBuffer[j])) {
-		j++
-	}
-	arrayLength, err := strconv.Atoi(string(readBuffer[1:j]))
-	if err != nil {
-		fmt.Println("Problem: error thrown when getting array length for ECHO")
-		os.Exit(1)
-	}
-
-	if arrayLength != 2 {
-		fmt.Println("Problem: more than 2 arguments passed for ECHO")
-		os.Exit(1)
-	}
-
-	wordLength, err := strconv.Atoi(string(readBuffer[15]))
-	if err != nil {
-		fmt.Println("Problem: error thrown when getting word length for ECHO argument")
-		os.Exit(1)
-	}
-	result := "+" + string(readBuffer[18:18+wordLength]) + "\r\n"
-	(*conn).Write([]byte(result))
-}
+var basicMap = map[string]string{}
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -74,10 +51,121 @@ func main() {
 				}
 
 				if bytes.Contains(readBuffer[:n], []byte("ECHO")) {
-					handleEcho(&conn, readBuffer, n)
+					result := handleEcho(readBuffer[:n])
+					conn.Write(result)
+				}
+
+				if bytes.Contains(readBuffer[:n], []byte("SET")) {
+					result := handleSet(readBuffer[:n])
+					conn.Write(result)
+				}
+
+				if bytes.Contains(readBuffer[:n], []byte("GET")) {
+					result := handleGet(readBuffer[:n])
+					conn.Write(result)
 				}
 			}
 		}()
 	}
 
+}
+
+func parseRedisArray(RESPArray []byte) []string {
+	// get length of array
+
+	i := 0 // array pointers
+	j := i + 1
+
+	for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
+		j++
+	}
+
+	lengthStr := string(RESPArray[i+1 : j])
+	length, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		fmt.Println("Problem parsing Redis array (1)")
+		os.Exit(1)
+	}
+
+	i += 3 + len(lengthStr) // shift right from `*[length]\r\n`
+
+	result := []string{}
+	for range length {
+		// get length of element
+		k := i + 1
+		for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
+			k++
+		}
+
+		wordLengthStr := string(RESPArray[i+1 : k])
+		wordLength, err := strconv.Atoi(wordLengthStr)
+		if err != nil {
+			fmt.Println("Problem parsing Redis array (2)")
+			os.Exit(1)
+		}
+
+		i += 3 + len(wordLengthStr)
+		end := i + wordLength
+
+		element := RESPArray[i:end]
+		result = append(result, string(element))
+
+		i = end + 2
+	}
+
+	return result
+}
+
+func encodeSimpleString(output string) []byte {
+	result := fmt.Sprintf("+%s\r\n", output)
+	return []byte(result)
+}
+
+func encodeBulkString(output string) []byte {
+	result := fmt.Sprintf("$%d\r\n%s\r\n", len(output), output)
+	return []byte(result)
+}
+
+func handleEcho(RESPArray []byte) []byte {
+
+	elements := parseRedisArray(RESPArray)
+
+	if len(elements) != 2 {
+		fmt.Println("Problem: more than 1 argument passed for ECHO")
+		os.Exit(1)
+	}
+
+	return encodeBulkString(elements[1])
+}
+
+func handleSet(RESPArray []byte) []byte {
+
+	elements := parseRedisArray(RESPArray)
+
+	if len(elements) != 3 {
+		fmt.Println("Problem: more than 2 arguments passed for SET")
+		os.Exit(1)
+	}
+
+	basicMap[elements[1]] = elements[2]
+
+	return encodeSimpleString("OK")
+}
+
+func handleGet(RESPArray []byte) []byte {
+
+	elements := parseRedisArray(RESPArray)
+
+	if len(elements) != 2 {
+		fmt.Println("Problem: more than 1 argument passed for GET")
+		os.Exit(1)
+	}
+
+	result, exists := basicMap[elements[1]]
+	if !exists {
+		fmt.Println("Problem: no corresponding pair for key `" + elements[1] + "`")
+		os.Exit(1)
+	}
+
+	return encodeBulkString(result)
 }
