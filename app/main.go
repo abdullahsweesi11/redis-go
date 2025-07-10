@@ -67,7 +67,6 @@ func main() {
 				if n == 0 {
 					break
 				}
-				fmt.Println(string(readBuffer))
 
 				numPings := bytes.Count(readBuffer[:n], []byte("PING"))
 				for range numPings {
