@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"os"
-	"bytes"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -30,26 +30,24 @@ func main() {
 			os.Exit(1)
 		}
 
-		defer conn.Close()
-		readBuffer := make([]byte, 1024)
+		go func() {
+			defer conn.Close()
+			readBuffer := make([]byte, 1024)
 
-		for {
-			n, readErr := conn.Read(readBuffer)
-			if readErr != nil {
-				fmt.Println("Error reading request: ", readErr.Error())
-				os.Exit(1)
-			}
+			for {
+				n, _ := conn.Read(readBuffer)
 
-			if n == 0 {
-				break
-			}
+				if n == 0 {
+					break
+				}
 
-			numPings := bytes.Count(readBuffer[:n], []byte("PING"))
-			
-			for i := 0; i < numPings; i++ {
-				conn.Write([]byte("+PONG\r\n"))
+				numPings := bytes.Count(readBuffer[:n], []byte("PING"))
+
+				for i := 0; i < numPings; i++ {
+					conn.Write([]byte("+PONG\r\n"))
+				}
 			}
-		}
+		}()
 	}
 
 }
