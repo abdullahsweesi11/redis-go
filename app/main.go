@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -15,10 +16,14 @@ var _ = net.Listen
 var _ = os.Exit
 
 var basicMap = map[string]string{}
+var config = map[string]string{}
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
+
+	// parse `dir` and `dbfilename` flags
+	parseFlags()
 
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
@@ -69,13 +74,23 @@ func main() {
 				}
 
 				if len(parsedArray) >= 2 && parsedArray[0] == "CONFIG" && parsedArray[1] == "GET" {
-					result := 1
-					result *= 1
+					result := handleConfigGet(parsedArray)
+					conn.Write(result)
 				}
 			}
 		}()
 	}
 
+}
+
+func parseFlags() {
+	dir := flag.String("dir", "", "Path to RDB file directory")
+	dbfilename := flag.String("dbfilename", "", "RDB file name")
+
+	flag.Parse()
+
+	config["dir"] = *dir
+	config["dbfilename"] = *dbfilename
 }
 
 func parseRedisArray(RESPArray []byte) []string {
@@ -135,7 +150,13 @@ func encodeBulkString(output string) []byte {
 }
 
 func encodeBulkArray(output []string) []byte {
+	result := fmt.Sprintf("*%d\r\n", len(output))
 
+	for _, o := range output {
+		result += fmt.Sprintf("$%d\r\n%s\r\n", len(o), o)
+	}
+
+	return []byte(result)
 }
 
 func nullBulkString() []byte {
@@ -144,7 +165,6 @@ func nullBulkString() []byte {
 }
 
 func handleEcho(array []string) []byte {
-
 	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for ECHO")
 		os.Exit(1)
@@ -154,7 +174,6 @@ func handleEcho(array []string) []byte {
 }
 
 func handleSet(array []string) []byte {
-
 	if len(array) != 3 && len(array) != 5 {
 		fmt.Println("Problem: too many arguments passed for SET")
 		os.Exit(1)
@@ -178,7 +197,6 @@ func handleSet(array []string) []byte {
 }
 
 func handleGet(array []string) []byte {
-
 	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for GET")
 		os.Exit(1)
@@ -190,4 +208,19 @@ func handleGet(array []string) []byte {
 	}
 
 	return encodeBulkString(result)
+}
+
+func handleConfigGet(array []string) []byte {
+	if len(array) != 3 {
+		fmt.Println("Problem: more than 1 argument passed for CONFIG GET")
+		os.Exit(1)
+	}
+
+	key := array[2]
+	val, exists := config[key]
+	if !exists {
+		return nullBulkString()
+	}
+
+	return encodeBulkArray([]string{key, val})
 }
