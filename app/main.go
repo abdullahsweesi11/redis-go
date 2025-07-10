@@ -34,8 +34,8 @@ func handleEcho(conn *net.Conn, readBuffer []byte, n int) {
 		fmt.Println("Problem: error thrown when getting word length for ECHO argument")
 		os.Exit(1)
 	}
-
-	(*conn).Write([]byte("+" + string(readBuffer[18:18+wordLength]) + "\r\n"))
+	result := "+" + string(readBuffer[18:18+wordLength]) + "\r\n"
+	(*conn).Write([]byte(result))
 }
 
 func main() {
