@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 	"unicode"
 )
 
@@ -83,7 +84,7 @@ func parseRedisArray(RESPArray []byte) []string {
 	lengthStr := string(RESPArray[i+1 : j])
 	length, err := strconv.Atoi(lengthStr)
 	if err != nil {
-		fmt.Println("Problem parsing Redis array (1)")
+		fmt.Println("Problem: error thrown when parsing Redis array (1)")
 		os.Exit(1)
 	}
 
@@ -100,7 +101,7 @@ func parseRedisArray(RESPArray []byte) []string {
 		wordLengthStr := string(RESPArray[i+1 : k])
 		wordLength, err := strconv.Atoi(wordLengthStr)
 		if err != nil {
-			fmt.Println("Problem parsing Redis array (2)")
+			fmt.Println("Problem: error thrown when parsing Redis array (2)")
 			os.Exit(1)
 		}
 
@@ -126,6 +127,11 @@ func encodeBulkString(output string) []byte {
 	return []byte(result)
 }
 
+func nullBulkString() []byte {
+	result := "$-1\r\n"
+	return []byte(result)
+}
+
 func handleEcho(RESPArray []byte) []byte {
 
 	elements := parseRedisArray(RESPArray)
@@ -142,12 +148,24 @@ func handleSet(RESPArray []byte) []byte {
 
 	elements := parseRedisArray(RESPArray)
 
-	if len(elements) != 3 {
-		fmt.Println("Problem: more than 2 arguments passed for SET")
+	if len(elements) != 3 && len(elements) != 5 {
+		fmt.Println("Problem: too many arguments passed for SET")
 		os.Exit(1)
 	}
 
 	basicMap[elements[1]] = elements[2]
+
+	// handle expiry delay
+	if len(elements) == 5 && elements[3] == "px" {
+		delay, err := strconv.Atoi(elements[4])
+		if err != nil {
+			fmt.Println("Problem: error thrown in SET (1)")
+			os.Exit(1)
+		}
+		time.AfterFunc(time.Millisecond*time.Duration(delay), func() {
+			delete(basicMap, elements[1])
+		})
+	}
 
 	return encodeSimpleString("OK")
 }
@@ -163,8 +181,7 @@ func handleGet(RESPArray []byte) []byte {
 
 	result, exists := basicMap[elements[1]]
 	if !exists {
-		fmt.Println("Problem: no corresponding pair for key `" + elements[1] + "`")
-		os.Exit(1)
+		return nullBulkString()
 	}
 
 	return encodeBulkString(result)
