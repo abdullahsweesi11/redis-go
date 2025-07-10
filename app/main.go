@@ -51,19 +51,26 @@ func main() {
 					conn.Write([]byte("+PONG\r\n"))
 				}
 
-				if bytes.Contains(readBuffer[:n], []byte("ECHO")) {
-					result := handleEcho(readBuffer[:n])
+				parsedArray := parseRedisArray(readBuffer[:n])
+
+				if parsedArray[0] == "ECHO" {
+					result := handleEcho(parsedArray)
 					conn.Write(result)
 				}
 
-				if bytes.Contains(readBuffer[:n], []byte("SET")) {
-					result := handleSet(readBuffer[:n])
+				if parsedArray[0] == "SET" {
+					result := handleSet(parsedArray)
 					conn.Write(result)
 				}
 
-				if bytes.Contains(readBuffer[:n], []byte("GET")) {
-					result := handleGet(readBuffer[:n])
+				if parsedArray[0] == "GET" {
+					result := handleGet(parsedArray)
 					conn.Write(result)
+				}
+
+				if len(parsedArray) >= 2 && parsedArray[0] == "CONFIG" && parsedArray[1] == "GET" {
+					result := 1
+					result *= 1
 				}
 			}
 		}()
@@ -127,59 +134,57 @@ func encodeBulkString(output string) []byte {
 	return []byte(result)
 }
 
+func encodeBulkArray(output []string) []byte {
+
+}
+
 func nullBulkString() []byte {
 	result := "$-1\r\n"
 	return []byte(result)
 }
 
-func handleEcho(RESPArray []byte) []byte {
+func handleEcho(array []string) []byte {
 
-	elements := parseRedisArray(RESPArray)
-
-	if len(elements) != 2 {
+	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for ECHO")
 		os.Exit(1)
 	}
 
-	return encodeBulkString(elements[1])
+	return encodeBulkString(array[1])
 }
 
-func handleSet(RESPArray []byte) []byte {
+func handleSet(array []string) []byte {
 
-	elements := parseRedisArray(RESPArray)
-
-	if len(elements) != 3 && len(elements) != 5 {
+	if len(array) != 3 && len(array) != 5 {
 		fmt.Println("Problem: too many arguments passed for SET")
 		os.Exit(1)
 	}
 
-	basicMap[elements[1]] = elements[2]
+	basicMap[array[1]] = array[2]
 
 	// handle expiry delay
-	if len(elements) == 5 && elements[3] == "px" {
-		delay, err := strconv.Atoi(elements[4])
+	if len(array) == 5 && array[3] == "px" {
+		delay, err := strconv.Atoi(array[4])
 		if err != nil {
 			fmt.Println("Problem: error thrown in SET (1)")
 			os.Exit(1)
 		}
 		time.AfterFunc(time.Millisecond*time.Duration(delay), func() {
-			delete(basicMap, elements[1])
+			delete(basicMap, array[1])
 		})
 	}
 
 	return encodeSimpleString("OK")
 }
 
-func handleGet(RESPArray []byte) []byte {
+func handleGet(array []string) []byte {
 
-	elements := parseRedisArray(RESPArray)
-
-	if len(elements) != 2 {
+	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for GET")
 		os.Exit(1)
 	}
 
-	result, exists := basicMap[elements[1]]
+	result, exists := basicMap[array[1]]
 	if !exists {
 		return nullBulkString()
 	}
