@@ -1,14 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"strconv"
 	"time"
-	"unicode"
 )
 
 // Ensures gofmt doesn't remove the "net" and "os" imports in stage 1 (feel free to remove this!)
@@ -77,6 +78,11 @@ func main() {
 					result := handleConfigGet(parsedArray)
 					conn.Write(result)
 				}
+
+				if parsedArray[0] == "KEYS" {
+					result := handleKeys(parsedArray)
+					conn.Write(result)
+				}
 			}
 		}()
 	}
@@ -91,77 +97,6 @@ func parseFlags() {
 
 	config["dir"] = *dir
 	config["dbfilename"] = *dbfilename
-}
-
-func parseRedisArray(RESPArray []byte) []string {
-	// get length of array
-
-	i := 0 // array pointers
-	j := i + 1
-
-	for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
-		j++
-	}
-
-	lengthStr := string(RESPArray[i+1 : j])
-	length, err := strconv.Atoi(lengthStr)
-	if err != nil {
-		fmt.Println("Problem: error thrown when parsing Redis array (1)")
-		os.Exit(1)
-	}
-
-	i += 3 + len(lengthStr) // shift right from `*[length]\r\n`
-
-	result := []string{}
-	for range length {
-		// get length of element
-		k := i + 1
-		for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
-			k++
-		}
-
-		wordLengthStr := string(RESPArray[i+1 : k])
-		wordLength, err := strconv.Atoi(wordLengthStr)
-		if err != nil {
-			fmt.Println("Problem: error thrown when parsing Redis array (2)")
-			os.Exit(1)
-		}
-
-		i += 3 + len(wordLengthStr)
-		end := i + wordLength
-
-		element := RESPArray[i:end]
-		result = append(result, string(element))
-
-		i = end + 2
-	}
-
-	return result
-}
-
-func encodeSimpleString(output string) []byte {
-	result := fmt.Sprintf("+%s\r\n", output)
-	return []byte(result)
-}
-
-func encodeBulkString(output string) []byte {
-	result := fmt.Sprintf("$%d\r\n%s\r\n", len(output), output)
-	return []byte(result)
-}
-
-func encodeBulkArray(output []string) []byte {
-	result := fmt.Sprintf("*%d\r\n", len(output))
-
-	for _, o := range output {
-		result += fmt.Sprintf("$%d\r\n%s\r\n", len(o), o)
-	}
-
-	return []byte(result)
-}
-
-func nullBulkString() []byte {
-	result := "$-1\r\n"
-	return []byte(result)
 }
 
 func handleEcho(array []string) []byte {
@@ -223,4 +158,22 @@ func handleConfigGet(array []string) []byte {
 	}
 
 	return encodeBulkArray([]string{key, val})
+}
+
+func handleKeys(array []string) []byte {
+	// assuming array[1] is always "*"
+	file, err := os.Open(path.Join(config["dir"], config["dbfilename"]))
+	if err != nil {
+		return []byte{}
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	rdbContents := ""
+	for scanner.Scan() {
+		rdbContents += fmt.Sprintf("%x", []byte(scanner.Text()))
+	}
+
+	result := extractValue(rdbContents)
+	return encodeBulkArray([]string{result})
 }
