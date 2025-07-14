@@ -81,7 +81,7 @@ func nullBulkString() []byte {
 
 func extractMap(fileEncoding string) map[string]string {
 	dataLength := len(fileEncoding)
-	results := []string{}
+	results := map[string]string{}
 	// fmt.Println(fileEncoding)
 	for i := 0; i < dataLength; i += 2 {
 		if fileEncoding[i:i+2] != "fe" {
@@ -102,58 +102,68 @@ func extractMap(fileEncoding string) map[string]string {
 			os.Exit(1)
 		}
 
-		if i+4 > dataLength || fileEncoding[i+2:i+4] != "01" {
-			fmt.Println("Problem: expected hash table size to be 1")
+		if i+4 > dataLength {
+			fmt.Println("Problem: could not find hashmap")
 			os.Exit(1)
 		}
 
 		i += 6
 
-		if i+2 > dataLength || fileEncoding[i:i+2] != "00" {
-			fmt.Println("Problem: expected value encoding to be string (00)")
-			os.Exit(1)
-		}
-
-		i += 2
-
 		entities := []string{"key", "value"}
 
-		for _, entity := range entities {
+		for fileEncoding[i:i+2] == "00" {
+
 			if i+2 > dataLength {
-				fmt.Printf("Problem: could not find %s length", entity)
+				fmt.Println("Problem: expected value encoding to be string (00)")
 				os.Exit(1)
 			}
 
-			entityLengthInt64, err := strconv.ParseInt(fileEncoding[i:i+2], 16, 64)
-			if err != nil {
-				fmt.Printf("Problem: error thrown while parsing %s length", entity)
-				os.Exit(1)
-			}
-
-			entityLength := int(entityLengthInt64)
-			// fmt.Println(entityLength)
 			i += 2
 
-			if i+(2*entityLength) > dataLength {
-				// fmt.Println(i, entityLength, dataLength)
-				fmt.Printf("Problem: could not find %s data", entity)
-				os.Exit(1)
+			var key string
+			var value string
+
+			for _, entity := range entities {
+				if i+2 > dataLength {
+					fmt.Printf("Problem: could not find %s length", entity)
+					os.Exit(1)
+				}
+
+				entityLengthInt64, err := strconv.ParseInt(fileEncoding[i:i+2], 16, 64)
+				if err != nil {
+					fmt.Printf("Problem: error thrown while parsing %s length", entity)
+					os.Exit(1)
+				}
+
+				entityLength := int(entityLengthInt64)
+				// fmt.Println(entityLength)
+				i += 2
+
+				if i+(2*entityLength) > dataLength {
+					// fmt.Println(i, entityLength, dataLength)
+					fmt.Printf("Problem: could not find %s data", entity)
+					os.Exit(1)
+				}
+
+				entityBytes, err := hex.DecodeString(fileEncoding[i : i+(2*entityLength)])
+				if err != nil {
+					fmt.Printf("Problem: error thrown while parsing %s", entity)
+					os.Exit(1)
+				}
+
+				if entity == "key" {
+					key = string(entityBytes)
+				} else {
+					value = string(entityBytes)
+				}
+				i += 2 * entityLength
 			}
 
-			entityBytes, err := hex.DecodeString(fileEncoding[i : i+(2*entityLength)])
-			if err != nil {
-				fmt.Printf("Problem: error thrown while parsing %s", entity)
-				os.Exit(1)
-			}
-
-			results = append(results, string(entityBytes))
-			i += 2 * entityLength
+			results[key] = value
 		}
 
 		break
 	}
 
-	return map[string]string{
-		results[0]: results[1],
-	}
+	return results
 }
