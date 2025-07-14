@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
+	"maps"
 	"net"
 	"os"
-	"path"
 	"strconv"
 	"time"
 )
@@ -115,6 +114,12 @@ func handleSet(array []string) []byte {
 	}
 
 	basicMap[array[1]] = array[2]
+	// issue: incorporate error into output log
+	// added, _ := addKey(array[1], array[2])
+	// if !added {
+	// 	fmt.Printf("Problem: the key `%s` could not be added", array[1])
+	// 	os.Exit(1)
+	// }
 
 	// handle expiry delay
 	if len(array) == 5 && array[3] == "px" {
@@ -124,6 +129,7 @@ func handleSet(array []string) []byte {
 			os.Exit(1)
 		}
 		time.AfterFunc(time.Millisecond*time.Duration(delay), func() {
+			// deleteKey(array[1])
 			delete(basicMap, array[1])
 		})
 	}
@@ -135,6 +141,20 @@ func handleGet(array []string) []byte {
 	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for GET")
 		os.Exit(1)
+	}
+
+	rdbContents, err := readRDBFile()
+	// if err != nil {
+	// 	fmt.Println("Problem: error thrown when reading RDB file")
+	// 	fmt.Println(err)
+	// 	os.Exit(1)
+	// }
+
+	if err == nil {
+		hashmap := extractMap(*rdbContents)
+		maps.Copy(basicMap, hashmap)
+	} else {
+		fmt.Println("Warning: error thrown when reading RDB file")
 	}
 
 	result, exists := basicMap[array[1]]
@@ -162,18 +182,27 @@ func handleConfigGet(array []string) []byte {
 
 func handleKeys(array []string) []byte {
 	// assuming array[1] is always "*"
-	file, err := os.Open(path.Join(config["dir"], config["dbfilename"]))
+
+	if len(array) != 2 {
+		fmt.Println("Problem: more than 1 argument passed for KEYS")
+		os.Exit(1)
+	}
+
+	rdbContents, err := readRDBFile()
 	if err != nil {
-		return []byte{}
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	rdbContents := ""
-	for scanner.Scan() {
-		rdbContents += fmt.Sprintf("%x", []byte(scanner.Text()))
+		fmt.Println("Problem: error thrown when reading RDB file")
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
-	result := extractValue(rdbContents)
-	return encodeBulkArray([]string{result})
+	hashmap := extractMap(*rdbContents)
+	keys := make([]string, len(hashmap))
+	i := 0
+
+	for key := range hashmap {
+		keys[i] = key
+		i++
+	}
+
+	return encodeBulkArray(keys)
 }

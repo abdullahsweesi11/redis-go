@@ -79,16 +79,16 @@ func nullBulkString() []byte {
 	return []byte(result)
 }
 
-func extractValue(fileEncoding string) string {
+func extractMap(fileEncoding string) map[string]string {
 	dataLength := len(fileEncoding)
 	results := []string{}
-	fmt.Println(fileEncoding)
+	// fmt.Println(fileEncoding)
 	for i := 0; i < dataLength; i += 2 {
 		if fileEncoding[i:i+2] != "fe" {
 			continue
 		}
 
-		fmt.Println(fileEncoding[i:])
+		// fmt.Println(fileEncoding[i:])
 
 		if i+4 > dataLength || fileEncoding[i+2:i+4] != "00" {
 			fmt.Println("Problem: expected database index to be 0")
@@ -131,11 +131,11 @@ func extractValue(fileEncoding string) string {
 			}
 
 			entityLength := int(entityLengthInt64)
-			fmt.Println(entityLength)
+			// fmt.Println(entityLength)
 			i += 2
 
 			if i+(2*entityLength) > dataLength {
-				fmt.Println(i, entityLength, dataLength)
+				// fmt.Println(i, entityLength, dataLength)
 				fmt.Printf("Problem: could not find %s data", entity)
 				os.Exit(1)
 			}
@@ -153,5 +153,7 @@ func extractValue(fileEncoding string) string {
 		break
 	}
 
-	return results[0]
+	return map[string]string{
+		results[0]: results[1],
+	}
 }
