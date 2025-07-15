@@ -2,11 +2,19 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"unicode"
 )
+
+type keyValuePair struct {
+	Key    string
+	Value  string
+	Expiry *expiry
+}
 
 func parseRedisArray(RESPArray []byte) []string {
 	// get length of array
@@ -79,10 +87,10 @@ func nullBulkString() []byte {
 	return []byte(result)
 }
 
-func extractMap(fileEncoding string) map[string]string {
+func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 	dataLength := len(fileEncoding)
-	results := map[string]string{}
-	// fmt.Println(fileEncoding)
+	fmt.Println(fileEncoding)
+	var intermediateResults []keyValuePair
 	for i := 0; i < dataLength; i += 2 {
 		if fileEncoding[i:i+2] != "fe" {
 			continue
@@ -102,68 +110,144 @@ func extractMap(fileEncoding string) map[string]string {
 			os.Exit(1)
 		}
 
-		if i+4 > dataLength {
+		if i+6 > dataLength {
 			fmt.Println("Problem: could not find hashmap")
+			os.Exit(1)
+		}
+
+		size, err := strconv.Atoi(fileEncoding[i+2 : i+4])
+		if err != nil {
+			fmt.Println("Problem: error thrown while parsing hash table size")
+			os.Exit(1)
+		}
+		expirySize, expiryErr := strconv.Atoi(fileEncoding[i+2 : i+4])
+		if expiryErr != nil {
+			fmt.Printf("Problem: error thrown while parsing expiry hash table size")
 			os.Exit(1)
 		}
 
 		i += 6
 
-		entities := []string{"key", "value"}
+		// remove ff part
 
-		for fileEncoding[i:i+2] == "00" {
+		pairs := strings.Split(fileEncoding[i:], "ff")[0]
 
-			if i+2 > dataLength {
-				fmt.Println("Problem: expected value encoding to be string (00)")
-				os.Exit(1)
-			}
-
-			i += 2
-
-			var key string
-			var value string
-
-			for _, entity := range entities {
-				if i+2 > dataLength {
-					fmt.Printf("Problem: could not find %s length", entity)
-					os.Exit(1)
-				}
-
-				entityLengthInt64, err := strconv.ParseInt(fileEncoding[i:i+2], 16, 64)
-				if err != nil {
-					fmt.Printf("Problem: error thrown while parsing %s length", entity)
-					os.Exit(1)
-				}
-
-				entityLength := int(entityLengthInt64)
-				// fmt.Println(entityLength)
-				i += 2
-
-				if i+(2*entityLength) > dataLength {
-					// fmt.Println(i, entityLength, dataLength)
-					fmt.Printf("Problem: could not find %s data", entity)
-					os.Exit(1)
-				}
-
-				entityBytes, err := hex.DecodeString(fileEncoding[i : i+(2*entityLength)])
-				if err != nil {
-					fmt.Printf("Problem: error thrown while parsing %s", entity)
-					os.Exit(1)
-				}
-
-				if entity == "key" {
-					key = string(entityBytes)
-				} else {
-					value = string(entityBytes)
-				}
-				i += 2 * entityLength
-			}
-
-			results[key] = value
-		}
+		intermediateResults = getPairs(pairs, size, expirySize)
 
 		break
 	}
 
+	results := map[string]string{}
+	expiryResults := map[string]*expiry{}
+
+	for _, r := range intermediateResults {
+		results[r.Key] = r.Value
+		if r.Expiry != nil {
+			expiryResults[r.Key] = r.Expiry
+		}
+	}
+	return results, expiryResults
+}
+
+func getPairs(pairs string, size, expirySize int) []keyValuePair {
+
+	// fmt.Println(normalSize)
+	// fmt.Println(expirySize)
+	// fmt.Println(pairs)
+	dataLength := len(pairs)
+	entities := []string{"key", "value"}
+	results := []keyValuePair{}
+
+	i := 0
+	for i < dataLength {
+		if i+2 > dataLength {
+			fmt.Println("Problem: could not find start of key-value pair")
+			os.Exit(1)
+		}
+		var pair keyValuePair
+
+		switch pairs[i : i+2] {
+		// timestamp in milliseconds
+		case "fc":
+			i += 2
+			if i+16 > dataLength {
+				fmt.Println("Problem: could not find expiry timestamp")
+				os.Exit(1)
+			}
+
+			timestampHex, convertErr := convertLEHex(pairs[i : i+16])
+			if convertErr != nil {
+				fmt.Printf("Problem: error thrown while converting timestamp from little endian")
+				os.Exit(1)
+			}
+			timestamp, err := strconv.ParseInt(timestampHex, 16, 64)
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing expiry timestamp")
+				os.Exit(1)
+			}
+
+			pair.Expiry = &expiry{int(timestamp)}
+			i += 16
+		}
+		if i+2 > dataLength || pairs[i:i+2] != "00" {
+			fmt.Println("Problem: expected value type to be string")
+			os.Exit(1)
+		}
+
+		i += 2
+
+		for _, entity := range entities {
+			if i+2 > dataLength {
+				fmt.Printf("Problem: could not find %s length", entity)
+				os.Exit(1)
+			}
+
+			entityLengthInt64, err := strconv.ParseInt(pairs[i:i+2], 16, 64)
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing %s length", entity)
+				os.Exit(1)
+			}
+
+			entityLength := int(entityLengthInt64)
+			// fmt.Println(entityLength)
+			i += 2
+
+			if i+(2*entityLength) > dataLength {
+				// fmt.Println(i, entityLength, dataLength)
+				fmt.Printf("Problem: could not find %s data", entity)
+				os.Exit(1)
+			}
+
+			entityBytes, err := hex.DecodeString(pairs[i : i+(2*entityLength)])
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing %s", entity)
+				os.Exit(1)
+			}
+
+			if entity == "key" {
+				pair.Key = string(entityBytes)
+			} else {
+				pair.Value = string(entityBytes)
+			}
+			i += 2 * entityLength
+		}
+
+		results = append(results, pair)
+	}
+
 	return results
+}
+
+func convertLEHex(input string) (string, error) {
+	if len(input)%2 != 0 {
+		return "", errors.New("input HEX code must represent a whole number of bytes")
+	}
+
+	output := ""
+
+	for i := len(input) - 3; i >= 0; i -= 2 {
+		output += input[i : i+2]
+	}
+
+	return output, nil
 }

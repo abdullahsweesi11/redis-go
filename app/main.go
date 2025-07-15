@@ -1,5 +1,10 @@
 package main
 
+// List of todos:
+// - Sort out the lingering problem of reading a key properly
+// - Extract expiry delays from extractMap (distringuish between ms and seconds)
+// - (I think) expiry delays will be measured from when the key is read (fix GET)
+
 import (
 	"bytes"
 	"flag"
@@ -15,8 +20,13 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-var basicMap = map[string]string{}
+var localMap = map[string]string{}
+var expiryMap = map[string]*expiry{}
 var config = map[string]string{}
+
+type expiry struct {
+	Timestamp int
+}
 
 func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -113,7 +123,7 @@ func handleSet(array []string) []byte {
 		os.Exit(1)
 	}
 
-	basicMap[array[1]] = array[2]
+	localMap[array[1]] = array[2]
 	// issue: incorporate error into output log
 	// added, _ := addKey(array[1], array[2])
 	// if !added {
@@ -124,14 +134,11 @@ func handleSet(array []string) []byte {
 	// handle expiry delay
 	if len(array) == 5 && array[3] == "px" {
 		delay, err := strconv.Atoi(array[4])
+		expiryMap[array[1]] = &expiry{int(time.Now().UnixMilli()) + delay}
 		if err != nil {
 			fmt.Println("Problem: error thrown in SET (1)")
 			os.Exit(1)
 		}
-		time.AfterFunc(time.Millisecond*time.Duration(delay), func() {
-			// deleteKey(array[1])
-			delete(basicMap, array[1])
-		})
 	}
 
 	return encodeSimpleString("OK")
@@ -151,14 +158,23 @@ func handleGet(array []string) []byte {
 	// }
 
 	if err == nil {
-		hashmap := extractMap(*rdbContents)
-		maps.Copy(basicMap, hashmap)
+		importedMap, importedExpiryMap := extractMap(*rdbContents)
+		maps.Copy(localMap, importedMap)
+		maps.Copy(expiryMap, importedExpiryMap)
 	} else {
 		fmt.Println("Warning: error thrown when reading RDB file")
 	}
 
-	result, exists := basicMap[array[1]]
+	result, exists := localMap[array[1]]
 	if !exists {
+		return nullBulkString()
+	}
+
+	expiry, expiryExists := expiryMap[array[1]]
+	if expiryExists && expiry != nil && time.Now().Compare(time.UnixMilli(int64((*expiry).Timestamp))) <= 0 {
+		fmt.Println("expired!")
+		fmt.Println(time.UnixMilli(int64((*expiry).Timestamp)))
+		fmt.Println(time.Now())
 		return nullBulkString()
 	}
 
@@ -195,7 +211,7 @@ func handleKeys(array []string) []byte {
 		os.Exit(1)
 	}
 
-	hashmap := extractMap(*rdbContents)
+	hashmap, _ := extractMap(*rdbContents)
 	keys := make([]string, len(hashmap))
 	i := 0
 
