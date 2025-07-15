@@ -213,7 +213,7 @@ func getPairs(pairs string, size, expirySize int) []keyValuePair {
 			i += 2
 
 			if i+(2*entityLength) > dataLength {
-				// fmt.Println(i, entityLength, dataLength)
+				fmt.Println(pair.Key)
 				fmt.Printf("Problem: could not find %s data", entity)
 				os.Exit(1)
 			}

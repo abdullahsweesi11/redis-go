@@ -171,10 +171,8 @@ func handleGet(array []string) []byte {
 	}
 
 	expiry, expiryExists := expiryMap[array[1]]
-	if expiryExists && expiry != nil && time.Now().Compare(time.UnixMilli(int64((*expiry).Timestamp))) <= 0 {
+	if expiryExists && expiry != nil && time.Now().Compare(time.UnixMilli(int64((*expiry).Timestamp))) > 0 {
 		fmt.Println("expired!")
-		fmt.Println(time.UnixMilli(int64((*expiry).Timestamp)))
-		fmt.Println(time.Now())
 		return nullBulkString()
 	}
 
