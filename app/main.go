@@ -111,6 +111,11 @@ func main() {
 					result := handleInfo(parsedArray)
 					conn.Write(result)
 				}
+
+				if parsedArray[0] == "REPLCONF" {
+					result := encodeSimpleString("OK")
+					conn.Write(result)
+				}
 			}
 		}()
 	}
