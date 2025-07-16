@@ -13,7 +13,16 @@ func handshakeMaster(host, port string) (bool, error) {
 	}
 	defer conn.Close()
 
+	readBuffer := make([]byte, 1024)
+
+	// send PING to master
 	conn.Write(encodeBulkArray([]string{"PING"}))
+	conn.Read(readBuffer)
+
+	// send REPLCONF twice to the master
+	conn.Write(encodeBulkArray([]string{"REPLCONF", "listening-port", configRepl["port"]}))
+	conn.Write(encodeBulkArray([]string{"REPLCONF", "capa", "psync2"}))
+	conn.Read(readBuffer)
 
 	return true, nil
 }
