@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -241,13 +242,35 @@ func handleKeys(array []string) []byte {
 
 func handleInfo(array []string) []byte {
 	heading := "# Replication\n"
+
 	var role string
 	if configRepl["master"] == "" {
 		role = "master"
 	} else {
 		role = "slave"
 	}
-	result := fmt.Sprintf("%s\nrole:%s", heading, role)
+
+	replicationID := randomAlphanumGenerator(40)
+	replicationOffset := 0
+
+	result := fmt.Sprintf(
+		"%s\nrole:%s\nmaster_replid:%s\nmaster_repl_offset:%d",
+		heading,
+		role,
+		replicationID,
+		replicationOffset,
+	)
 
 	return encodeBulkString(result)
+}
+
+func randomAlphanumGenerator(length int) string {
+	// Note: a truly random seed would be used in production
+	characters := "abcdefghijklmnopqrstuvwxyz0123456789"
+	resultBytes := make([]byte, length)
+	for i := range resultBytes {
+		resultBytes[i] = characters[rand.Intn(len(characters))]
+	}
+
+	return string(resultBytes)
 }
