@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
+	"time"
 	"unicode"
 )
 
@@ -89,50 +89,32 @@ func nullBulkString() []byte {
 
 func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 	dataLength := len(fileEncoding)
-	fmt.Println(fileEncoding)
 	var intermediateResults []keyValuePair
 	for i := 0; i < dataLength; i += 2 {
 		if fileEncoding[i:i+2] != "fe" {
 			continue
 		}
 
-		// fmt.Println(fileEncoding[i:])
-
 		if i+4 > dataLength || fileEncoding[i+2:i+4] != "00" {
 			fmt.Println("Problem: expected database index to be 0")
 			os.Exit(1)
 		}
-
 		i += 4
 
 		if i+2 > dataLength || fileEncoding[i:i+2] != "fb" {
 			fmt.Printf("Problem: could not find the `fb` flag (at index %d)", i)
 			os.Exit(1)
 		}
-
 		if i+6 > dataLength {
-			fmt.Println("Problem: could not find hashmap")
+			fmt.Println("Problem: could not find hashmap metadata")
 			os.Exit(1)
 		}
-
-		size, err := strconv.Atoi(fileEncoding[i+2 : i+4])
-		if err != nil {
-			fmt.Println("Problem: error thrown while parsing hash table size")
-			os.Exit(1)
-		}
-		expirySize, expiryErr := strconv.Atoi(fileEncoding[i+2 : i+4])
-		if expiryErr != nil {
-			fmt.Printf("Problem: error thrown while parsing expiry hash table size")
-			os.Exit(1)
-		}
-
 		i += 6
 
 		// remove ff part
+		pairs := fileEncoding[i : dataLength-18]
 
-		pairs := strings.Split(fileEncoding[i:], "ff")[0]
-
-		intermediateResults = getPairs(pairs, size, expirySize)
+		intermediateResults = getPairs(pairs)
 
 		break
 	}
@@ -149,11 +131,7 @@ func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 	return results, expiryResults
 }
 
-func getPairs(pairs string, size, expirySize int) []keyValuePair {
-
-	// fmt.Println(normalSize)
-	// fmt.Println(expirySize)
-	// fmt.Println(pairs)
+func getPairs(pairs string) []keyValuePair {
 	dataLength := len(pairs)
 	entities := []string{"key", "value"}
 	results := []keyValuePair{}
@@ -167,8 +145,8 @@ func getPairs(pairs string, size, expirySize int) []keyValuePair {
 		var pair keyValuePair
 
 		switch pairs[i : i+2] {
-		// timestamp in milliseconds
 		case "fc":
+			// timestamp in milliseconds
 			i += 2
 			if i+16 > dataLength {
 				fmt.Println("Problem: could not find expiry timestamp")
@@ -180,13 +158,14 @@ func getPairs(pairs string, size, expirySize int) []keyValuePair {
 				fmt.Printf("Problem: error thrown while converting timestamp from little endian")
 				os.Exit(1)
 			}
-			timestamp, err := strconv.ParseInt(timestampHex, 16, 64)
+			timestampUnixMilli, err := strconv.ParseInt(timestampHex, 16, 64)
 			if err != nil {
 				fmt.Printf("Problem: error thrown while parsing expiry timestamp")
 				os.Exit(1)
 			}
 
-			pair.Expiry = &expiry{int(timestamp)}
+			timestamp := time.UnixMilli(timestampUnixMilli)
+			pair.Expiry = &expiry{timestamp}
 			i += 16
 		}
 		if i+2 > dataLength || pairs[i:i+2] != "00" {
@@ -213,7 +192,6 @@ func getPairs(pairs string, size, expirySize int) []keyValuePair {
 			i += 2
 
 			if i+(2*entityLength) > dataLength {
-				fmt.Println(pair.Key)
 				fmt.Printf("Problem: could not find %s data", entity)
 				os.Exit(1)
 			}
@@ -244,8 +222,7 @@ func convertLEHex(input string) (string, error) {
 	}
 
 	output := ""
-
-	for i := len(input) - 3; i >= 0; i -= 2 {
+	for i := len(input) - 2; i >= 0; i -= 2 {
 		output += input[i : i+2]
 	}
 

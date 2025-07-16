@@ -25,7 +25,7 @@ var expiryMap = map[string]*expiry{}
 var config = map[string]string{}
 
 type expiry struct {
-	Timestamp int
+	Timestamp time.Time
 }
 
 func main() {
@@ -134,7 +134,7 @@ func handleSet(array []string) []byte {
 	// handle expiry delay
 	if len(array) == 5 && array[3] == "px" {
 		delay, err := strconv.Atoi(array[4])
-		expiryMap[array[1]] = &expiry{int(time.Now().UnixMilli()) + delay}
+		expiryMap[array[1]] = &expiry{time.UnixMilli(time.Now().UnixMilli() + int64(delay))}
 		if err != nil {
 			fmt.Println("Problem: error thrown in SET (1)")
 			os.Exit(1)
@@ -171,7 +171,7 @@ func handleGet(array []string) []byte {
 	}
 
 	expiry, expiryExists := expiryMap[array[1]]
-	if expiryExists && expiry != nil && time.Now().Compare(time.UnixMilli(int64((*expiry).Timestamp))) > 0 {
+	if expiryExists && expiry != nil && time.Now().Compare((*expiry).Timestamp) > 0 {
 		fmt.Println("expired!")
 		return nullBulkString()
 	}
