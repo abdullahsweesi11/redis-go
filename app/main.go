@@ -35,7 +35,7 @@ func main() {
 	// parse `dir` and `dbfilename` flags
 	parseFlags()
 
-	l, err := net.Listen("tcp", "0.0.0.0:6379")
+	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", config["port"]))
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
@@ -101,11 +101,17 @@ func main() {
 func parseFlags() {
 	dir := flag.String("dir", "", "Path to RDB file directory")
 	dbfilename := flag.String("dbfilename", "", "RDB file name")
+	port := flag.String("port", "", "Redis server port")
 
 	flag.Parse()
 
 	config["dir"] = *dir
 	config["dbfilename"] = *dbfilename
+	if *port == "" {
+		config["port"] = "6379"
+	} else {
+		config["port"] = *port
+	}
 }
 
 func handleEcho(array []string) []byte {
