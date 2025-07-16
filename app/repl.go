@@ -21,7 +21,12 @@ func handshakeMaster(host, port string) (bool, error) {
 
 	// send REPLCONF twice to the master
 	conn.Write(encodeBulkArray([]string{"REPLCONF", "listening-port", configRepl["port"]}))
+	conn.Read(readBuffer)
 	conn.Write(encodeBulkArray([]string{"REPLCONF", "capa", "psync2"}))
+	conn.Read(readBuffer)
+
+	// send PSYNC to the master
+	conn.Write(encodeBulkArray([]string{"PSYNC", "?", "-1"}))
 	conn.Read(readBuffer)
 
 	return true, nil
