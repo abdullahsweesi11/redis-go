@@ -60,6 +60,8 @@ func main() {
 		configRepl["replicationOffset"] = "0"
 	}
 
+	replicaConns := []*net.Conn{}
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -91,6 +93,9 @@ func main() {
 				}
 
 				if parsedArray[0] == "SET" {
+					for _, replica := range replicaConns {
+						(*replica).Write(encodeBulkArray(parsedArray))
+					}
 					output := handleSet(parsedArray)
 					conn.Write(output)
 				}
@@ -133,6 +138,8 @@ func main() {
 					length := len(binaryCode)
 					output = encodeRDBFile(length, binaryCode)
 					conn.Write(output)
+
+					replicaConns = append(replicaConns, &conn)
 				}
 			}
 		}()
