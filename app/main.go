@@ -92,6 +92,11 @@ func main() {
 					result := handleKeys(parsedArray)
 					conn.Write(result)
 				}
+
+				if parsedArray[0] == "INFO" {
+					result := handleInfo(parsedArray)
+					conn.Write(result)
+				}
 			}
 		}()
 	}
@@ -225,4 +230,11 @@ func handleKeys(array []string) []byte {
 	}
 
 	return encodeBulkArray(keys)
+}
+
+func handleInfo(array []string) []byte {
+	heading := "# Replication\n"
+	result := heading + "role:master"
+
+	return encodeBulkString(result)
 }
