@@ -82,6 +82,11 @@ func encodeBulkArray(output []string) []byte {
 	return []byte(result)
 }
 
+func encodeRDBFile(length int, content []byte) []byte {
+	result := append(fmt.Appendf(nil, "$%d\r\n", length), content...)
+	return result
+}
+
 func nullBulkString() []byte {
 	result := "$-1\r\n"
 	return []byte(result)

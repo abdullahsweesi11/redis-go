@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 )
 
@@ -51,4 +52,15 @@ func sendReplInfo() []byte {
 	)
 
 	return encodeBulkString(result)
+}
+
+func randomAlphanumGenerator(length int) string {
+	// Note: a truly random seed would be used in production
+	characters := "abcdefghijklmnopqrstuvwxyz0123456789"
+	resultBytes := make([]byte, length)
+	for i := range resultBytes {
+		resultBytes[i] = characters[rand.Intn(len(characters))]
+	}
+
+	return string(resultBytes)
 }

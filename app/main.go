@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"maps"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -87,38 +86,38 @@ func main() {
 				parsedArray := parseRedisArray(readBuffer[:n])
 
 				if parsedArray[0] == "ECHO" {
-					result := handleEcho(parsedArray)
-					conn.Write(result)
+					output := handleEcho(parsedArray)
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "SET" {
-					result := handleSet(parsedArray)
-					conn.Write(result)
+					output := handleSet(parsedArray)
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "GET" {
-					result := handleGet(parsedArray)
-					conn.Write(result)
+					output := handleGet(parsedArray)
+					conn.Write(output)
 				}
 
 				if len(parsedArray) >= 2 && parsedArray[0] == "CONFIG" && parsedArray[1] == "GET" {
-					result := handleConfigGet(parsedArray)
-					conn.Write(result)
+					output := handleConfigGet(parsedArray)
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "KEYS" {
-					result := handleKeys(parsedArray)
-					conn.Write(result)
+					output := handleKeys(parsedArray)
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "INFO" {
-					result := handleInfo(parsedArray)
-					conn.Write(result)
+					output := handleInfo(parsedArray)
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "REPLCONF" {
-					result := encodeSimpleString("OK")
-					conn.Write(result)
+					output := encodeSimpleString("OK")
+					conn.Write(output)
 				}
 
 				if parsedArray[0] == "PSYNC" {
@@ -127,8 +126,13 @@ func main() {
 						configRepl["replicationID"],
 						configRepl["replicationOffset"],
 					)
-					result := encodeSimpleString(resyncCommand)
-					conn.Write(result)
+					output := encodeSimpleString(resyncCommand)
+					conn.Write(output)
+
+					binaryCode := getEmptyRDBFile()
+					length := len(binaryCode)
+					output = encodeRDBFile(length, binaryCode)
+					conn.Write(output)
 				}
 			}
 		}()
@@ -173,12 +177,6 @@ func handleSet(array []string) []byte {
 	}
 
 	localMap[array[1]] = array[2]
-	// issue: incorporate error into output log
-	// added, _ := addKey(array[1], array[2])
-	// if !added {
-	// 	fmt.Printf("Problem: the key `%s` could not be added", array[1])
-	// 	os.Exit(1)
-	// }
 
 	// handle expiry delay
 	if len(array) == 5 && array[3] == "px" {
@@ -277,15 +275,4 @@ func handleInfo(array []string) []byte {
 	default:
 		return nullBulkString()
 	}
-}
-
-func randomAlphanumGenerator(length int) string {
-	// Note: a truly random seed would be used in production
-	characters := "abcdefghijklmnopqrstuvwxyz0123456789"
-	resultBytes := make([]byte, length)
-	for i := range resultBytes {
-		resultBytes[i] = characters[rand.Intn(len(characters))]
-	}
-
-	return string(resultBytes)
 }
