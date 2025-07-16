@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,21 +36,31 @@ func main() {
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
 
-	// parse `dir` and `dbfilename` flags
+	// store any CLI flags
 	parseFlags()
 
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", configRepl["port"]))
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Printf("Problem: failed to bind to port %s", configRepl["port"])
 		os.Exit(1)
 	}
 
 	defer l.Close()
 
+	// If replica, connect to master instance
+	if configRepl["master"] != "" {
+		masterParts := strings.Split(configRepl["master"], " ")
+		_, err := handshakeMaster(masterParts[0], masterParts[1])
+		if err != nil {
+			fmt.Println("Problem: failed to connect to master")
+			os.Exit(1)
+		}
+	}
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
+			fmt.Println("Problem: error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
 
@@ -241,27 +252,12 @@ func handleKeys(array []string) []byte {
 }
 
 func handleInfo(array []string) []byte {
-	heading := "# Replication\n"
-
-	var role string
-	if configRepl["master"] == "" {
-		role = "master"
-	} else {
-		role = "slave"
+	switch array[1] {
+	case "replication":
+		return sendReplInfo()
+	default:
+		return nullBulkString()
 	}
-
-	replicationID := randomAlphanumGenerator(40)
-	replicationOffset := 0
-
-	result := fmt.Sprintf(
-		"%s\nrole:%s\nmaster_replid:%s\nmaster_repl_offset:%d",
-		heading,
-		role,
-		replicationID,
-		replicationOffset,
-	)
-
-	return encodeBulkString(result)
 }
 
 func randomAlphanumGenerator(length int) string {
