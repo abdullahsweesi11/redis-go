@@ -42,15 +42,12 @@ func sendReplInfo() []byte {
 		role = "slave"
 	}
 
-	replicationID := randomAlphanumGenerator(40)
-	replicationOffset := 0
-
 	result := fmt.Sprintf(
-		"%s\nrole:%s\nmaster_replid:%s\nmaster_repl_offset:%d",
+		"%s\nrole:%s\nmaster_replid:%s\nmaster_repl_offset:%s",
 		heading,
 		role,
-		replicationID,
-		replicationOffset,
+		configRepl["replicationID"],
+		configRepl["replicationOffset"],
 	)
 
 	return encodeBulkString(result)

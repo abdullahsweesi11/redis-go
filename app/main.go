@@ -55,6 +55,10 @@ func main() {
 			fmt.Println("Problem: failed to connect to master")
 			os.Exit(1)
 		}
+	} else {
+		// if master, set resynchronisation data
+		configRepl["replicationID"] = randomAlphanumGenerator(40)
+		configRepl["replicationOffset"] = "0"
 	}
 
 	for {
@@ -114,6 +118,16 @@ func main() {
 
 				if parsedArray[0] == "REPLCONF" {
 					result := encodeSimpleString("OK")
+					conn.Write(result)
+				}
+
+				if parsedArray[0] == "PSYNC" {
+					resyncCommand := fmt.Sprintf(
+						"FULLRESYNC %s %s",
+						configRepl["replicationID"],
+						configRepl["replicationOffset"],
+					)
+					result := encodeSimpleString(resyncCommand)
 					conn.Write(result)
 				}
 			}
