@@ -22,7 +22,9 @@ var _ = os.Exit
 
 var localMap = map[string]string{}
 var expiryMap = map[string]*expiry{}
-var config = map[string]string{}
+
+var configRDB = map[string]string{}
+var configRepl = map[string]string{}
 
 type expiry struct {
 	Timestamp time.Time
@@ -35,7 +37,7 @@ func main() {
 	// parse `dir` and `dbfilename` flags
 	parseFlags()
 
-	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", config["port"]))
+	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", configRepl["port"]))
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
@@ -107,16 +109,21 @@ func parseFlags() {
 	dir := flag.String("dir", "", "Path to RDB file directory")
 	dbfilename := flag.String("dbfilename", "", "RDB file name")
 	port := flag.String("port", "", "Redis server port")
+	master := flag.String("replicaof", "", "Master host and port")
 
 	flag.Parse()
 
-	config["dir"] = *dir
-	config["dbfilename"] = *dbfilename
+	// Set RDB config data
+	configRDB["dir"] = *dir
+	configRDB["dbfilename"] = *dbfilename
+
+	// Set replication config data
 	if *port == "" {
-		config["port"] = "6379"
+		configRepl["port"] = "6379"
 	} else {
-		config["port"] = *port
+		configRepl["port"] = *port
 	}
+	configRepl["master"] = *master
 }
 
 func handleEcho(array []string) []byte {
@@ -197,7 +204,7 @@ func handleConfigGet(array []string) []byte {
 	}
 
 	key := array[2]
-	val, exists := config[key]
+	val, exists := configRDB[key]
 	if !exists {
 		return nullBulkString()
 	}
@@ -234,7 +241,13 @@ func handleKeys(array []string) []byte {
 
 func handleInfo(array []string) []byte {
 	heading := "# Replication\n"
-	result := heading + "role:master"
+	var role string
+	if configRepl["master"] == "" {
+		role = "master"
+	} else {
+		role = "slave"
+	}
+	result := fmt.Sprintf("%s\nrole:%s", heading, role)
 
 	return encodeBulkString(result)
 }
