@@ -7,12 +7,12 @@ import (
 	"net"
 )
 
-func handshakeMaster(host, port string) (bool, error) {
+func handshakeMaster(host, port string) (*net.Conn, error) {
 	conn, err := net.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return false, errors.New("failed to connect to master")
+		return nil, errors.New("failed to connect to master")
 	}
-	defer conn.Close()
+	// defer conn.Close()
 
 	readBuffer := make([]byte, 1024)
 
@@ -30,23 +30,16 @@ func handshakeMaster(host, port string) (bool, error) {
 	conn.Write(encodeBulkArray([]string{"PSYNC", "?", "-1"}))
 	conn.Read(readBuffer)
 
-	return true, nil
+	return &conn, nil
 }
 
 func sendReplInfo() []byte {
 	heading := "# Replication\n"
 
-	var role string
-	if configRepl["master"] == "" {
-		role = "master"
-	} else {
-		role = "slave"
-	}
-
 	result := fmt.Sprintf(
 		"%s\nrole:%s\nmaster_replid:%s\nmaster_repl_offset:%s",
 		heading,
-		role,
+		configRepl["role"],
 		configRepl["replicationID"],
 		configRepl["replicationOffset"],
 	)

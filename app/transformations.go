@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,10 +11,25 @@ import (
 	"unicode"
 )
 
-type keyValuePair struct {
-	Key    string
-	Value  string
-	Expiry *expiry
+func parseFlags() {
+	dir := flag.String("dir", "", "Path to RDB file directory")
+	dbfilename := flag.String("dbfilename", "", "RDB file name")
+	port := flag.String("port", "", "Redis server port")
+	master := flag.String("replicaof", "", "Master host and port")
+
+	flag.Parse()
+
+	// Set RDB config data
+	configRDB["dir"] = *dir
+	configRDB["dbfilename"] = *dbfilename
+
+	// Set replication config data
+	if *port == "" {
+		configRepl["port"] = "6379"
+	} else {
+		configRepl["port"] = *port
+	}
+	configRepl["master"] = *master
 }
 
 func parseRedisArray(RESPArray []byte) []string {
@@ -90,6 +106,12 @@ func encodeRDBFile(length int, content []byte) []byte {
 func nullBulkString() []byte {
 	result := "$-1\r\n"
 	return []byte(result)
+}
+
+type keyValuePair struct {
+	Key    string
+	Value  string
+	Expiry *expiry
 }
 
 func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
