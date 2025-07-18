@@ -4,13 +4,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"path"
 )
 
 const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
 
 func readRDBFile() (*string, error) {
-	byteContent, err := os.ReadFile(path.Join(configRDB["dir"], configRDB["dbfilename"]))
+	byteContent, err := os.ReadFile(configRDB["name"])
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 	"time"
 	"unicode"
@@ -13,15 +14,32 @@ import (
 
 func parseFlags() {
 	dir := flag.String("dir", "", "Path to RDB file directory")
-	dbfilename := flag.String("dbfilename", "", "RDB file name")
+	dbFilename := flag.String("dbfilename", "", "RDB file name")
 	port := flag.String("port", "", "Redis server port")
 	master := flag.String("replicaof", "", "Master host and port")
 
 	flag.Parse()
 
 	// Set RDB config data
-	configRDB["dir"] = *dir
-	configRDB["dbfilename"] = *dbfilename
+	if *dir == "" || *dbFilename == "" {
+		// should choose a different home, since it isn't a temporary file
+		rDBFile, err := os.Create("/tmp/dump.rdb")
+		if err != nil {
+			fmt.Println("Problem: could not create an RDB file")
+			os.Exit(1)
+		}
+		defer rDBFile.Close()
+		configRDB["name"] = rDBFile.Name()
+
+		writeBuffer := getEmptyRDBFile()
+		_, err = rDBFile.Write(writeBuffer)
+		if err != nil {
+			fmt.Println("Problem: could not initialise an empty RDB file")
+			os.Exit(1)
+		}
+	} else {
+		configRDB["name"] = path.Join(*dir, *dbFilename)
+	}
 
 	// Set replication config data
 	if *port == "" {
@@ -123,8 +141,8 @@ func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 		}
 
 		if i+4 > dataLength || fileEncoding[i+2:i+4] != "00" {
-			fmt.Println("Problem: expected database index to be 0")
-			os.Exit(1)
+			fmt.Println("Warning: expected database index to be 0, terminating early")
+			break
 		}
 		i += 4
 
