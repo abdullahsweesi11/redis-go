@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+APsAAP+Z/8ky5l9PGw=="
 
 func readRDBFile() (*string, error) {
 	byteContent, err := os.ReadFile(configRDB["name"])
@@ -16,6 +16,19 @@ func readRDBFile() (*string, error) {
 
 	rdbContent := fmt.Sprintf("%x", byteContent)
 	return &rdbContent, nil
+}
+
+func writeRDBFile(content []byte) (bool, error) {
+	file, openErr := os.Open(configRDB["name"])
+	if openErr != nil {
+		return false, openErr
+	}
+	_, writeErr := file.Write(content)
+	if writeErr != nil {
+		return false, writeErr
+	}
+
+	return true, nil
 }
 
 func getEmptyRDBFile() []byte {

@@ -85,6 +85,7 @@ func main() {
 				}
 
 				parsedArray := parseRedisArray(readBuffer[:n])
+				fmt.Println(parsedArray)
 
 				if parsedArray[0] == "ECHO" {
 					output := handleEcho(parsedArray)

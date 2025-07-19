@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"strconv"
 	"time"
@@ -23,20 +22,29 @@ func handleSet(array []string) []byte {
 		os.Exit(1)
 	}
 
-	localMap[array[1]] = array[2]
-	// store key-value pair into RDB file
+	rdbContents, err := readRDBFile()
 
-	// handle expiry delay
-	if len(array) == 5 && array[3] == "px" {
-		delay, err := strconv.Atoi(array[4])
-		expiryMap[array[1]] = &expiry{time.UnixMilli(time.Now().UnixMilli() + int64(delay))}
-		if err != nil {
-			fmt.Println("Problem: error thrown in SET (1)")
-			os.Exit(1)
+	if err != nil {
+		fmt.Println("Problem: error thrown when reading RDB file")
+	} else {
+		// handle expiry delay
+		var expiryPtr *expiry
+		if len(array) == 5 && array[3] == "px" {
+			delay, err := strconv.Atoi(array[4])
+			if err != nil {
+				fmt.Println("Problem: error thrown in SET (1)")
+				os.Exit(1)
+			}
+			expiryPtr = &expiry{time.UnixMilli(time.Now().UnixMilli() + int64(delay))}
+		}
+
+		// store key-value pair into RDB file
+		if storeInMap(*rdbContents, array[1], array[2], expiryPtr) {
+			return encodeSimpleString("OK")
 		}
 	}
 
-	return encodeSimpleString("OK")
+	return nullBulkString()
 }
 
 func handleGet(array []string) []byte {
@@ -47,27 +55,13 @@ func handleGet(array []string) []byte {
 
 	rdbContents, err := readRDBFile()
 
-	if err == nil {
-		importedMap, importedExpiryMap := extractMap(*rdbContents)
-		maps.Copy(localMap, importedMap)
-		maps.Copy(expiryMap, importedExpiryMap)
-	} else {
+	if err != nil {
 		fmt.Println("Warning: error thrown when reading RDB file")
-		fmt.Println(localMap)
+	} else {
+		return getFromMap(*rdbContents, array[1])
 	}
 
-	result, exists := localMap[array[1]]
-	if !exists {
-		return nullBulkString()
-	}
-
-	expiry, expiryExists := expiryMap[array[1]]
-	if expiryExists && expiry != nil && time.Now().Compare((*expiry).Timestamp) > 0 {
-		fmt.Println("expired!")
-		return nullBulkString()
-	}
-
-	return encodeBulkString(result)
+	return nullBulkString()
 }
 
 func handleConfigGet(array []string) []byte {

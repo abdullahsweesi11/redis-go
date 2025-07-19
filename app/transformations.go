@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"hash/crc64"
 	"os"
 	"path"
 	"strconv"
@@ -127,9 +130,80 @@ func nullBulkString() []byte {
 }
 
 type keyValuePair struct {
-	Key    string
-	Value  string
-	Expiry *expiry
+	Key       string
+	Value     string
+	ExpiryPtr *expiry
+}
+
+func getChecksum(fileEncoding string) string {
+	table := crc64.MakeTable(crc64.ISO)
+	code, err := hex.DecodeString(fileEncoding)
+	if err != nil {
+		fmt.Println(err)
+	}
+	checksum := crc64.Checksum(code, table)
+
+	var buffer bytes.Buffer
+
+	binary.Write(&buffer, binary.LittleEndian, checksum)
+	newChecksumBytes := buffer.Bytes()
+	return fmt.Sprintf("%8x", newChecksumBytes)
+}
+
+func storeInMap(fileEncoding, key, val string, expiryPtr *expiry) bool {
+	// assumes key doesn't already exist in hashmap
+	dataLength := len(fileEncoding)
+	insertionIndex := dataLength - 18
+	insertion := ""
+
+	// TODO: increment 'fb' op code
+
+	if expiryPtr != nil {
+		insertion += "fc"
+		insertion += fmt.Sprintf("%x", (*expiryPtr).Timestamp)
+	}
+
+	// value of type string
+	insertion += "00"
+
+	// insert key
+	insertion += fmt.Sprintf("%2x", len([]byte(key)))
+	insertion += fmt.Sprintf("%x", []byte(key))
+
+	// insert value
+	insertion += fmt.Sprintf("%2x", len([]byte(val)))
+	insertion += fmt.Sprintf("%x", []byte(val))
+
+	// remove old end-of-file checksum
+	payload := fileEncoding[:insertionIndex] + insertion
+	// compute new end-of-file checksum
+	checksum := getChecksum(payload)
+
+	success, err := writeRDBFile([]byte(payload + "ff" + checksum))
+	if !success {
+		fmt.Println("Problem: RDB file could not be written")
+		fmt.Println(err)
+		return false
+	}
+
+	return true
+}
+
+func getFromMap(fileEncoding, key string) []byte {
+	hashmap, expiries := extractMap(fileEncoding)
+	fmt.Println(hashmap)
+
+	value, valueExists := hashmap[key]
+	if !valueExists {
+		return nullBulkString()
+	}
+
+	expiryPtr, expiryPtrExists := expiries[key]
+	if expiryPtrExists && expiryPtr != nil && time.Now().Compare((*expiryPtr).Timestamp) > 0 {
+		return nullBulkString()
+	}
+
+	return []byte(value)
 }
 
 func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
@@ -156,7 +230,7 @@ func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 		}
 		i += 6
 
-		// remove ff part
+		// remove end of file
 		pairs := fileEncoding[i : dataLength-18]
 
 		intermediateResults = getPairs(pairs)
@@ -169,8 +243,8 @@ func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
 
 	for _, r := range intermediateResults {
 		results[r.Key] = r.Value
-		if r.Expiry != nil {
-			expiryResults[r.Key] = r.Expiry
+		if r.ExpiryPtr != nil {
+			expiryResults[r.Key] = r.ExpiryPtr
 		}
 	}
 	return results, expiryResults
@@ -198,7 +272,8 @@ func getPairs(pairs string) []keyValuePair {
 				os.Exit(1)
 			}
 
-			timestampHex, convertErr := convertLEHex(pairs[i : i+16])
+			// switch from little-endian hex to big-endian hex
+			timestampHex, convertErr := toggleEndianHex(pairs[i : i+16])
 			if convertErr != nil {
 				fmt.Printf("Problem: error thrown while converting timestamp from little endian")
 				os.Exit(1)
@@ -210,7 +285,7 @@ func getPairs(pairs string) []keyValuePair {
 			}
 
 			timestamp := time.UnixMilli(timestampUnixMilli)
-			pair.Expiry = &expiry{timestamp}
+			pair.ExpiryPtr = &expiry{timestamp}
 			i += 16
 		}
 		if i+2 > dataLength || pairs[i:i+2] != "00" {
@@ -261,7 +336,8 @@ func getPairs(pairs string) []keyValuePair {
 	return results
 }
 
-func convertLEHex(input string) (string, error) {
+func toggleEndianHex(input string) (string, error) {
+	// toggles between little-endian and big-endian for hex strings
 	if len(input)%2 != 0 {
 		return "", errors.New("input HEX code must represent a whole number of bytes")
 	}
