@@ -19,7 +19,7 @@ func readRDBFile() (*string, error) {
 }
 
 func writeRDBFile(content []byte) (bool, error) {
-	file, openErr := os.Open(configRDB["name"])
+	file, openErr := os.Create(configRDB["name"])
 	if openErr != nil {
 		return false, openErr
 	}
@@ -27,7 +27,7 @@ func writeRDBFile(content []byte) (bool, error) {
 	if writeErr != nil {
 		return false, writeErr
 	}
-
+	fmt.Println("Finished writing to RDB file!")
 	return true, nil
 }
 

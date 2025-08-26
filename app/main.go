@@ -18,9 +18,6 @@ import (
 var _ = net.Listen
 var _ = os.Exit
 
-var localMap = map[string]string{}
-var expiryMap = map[string]*expiry{}
-
 var configRDB = map[string]string{}
 var configRepl = map[string]string{}
 
@@ -45,22 +42,48 @@ func main() {
 
 	// If replica, connect to master instance
 	if configRepl["master"] != "" {
+		fmt.Println("I'm a replica")
 		masterParts := strings.Split(configRepl["master"], " ")
-		_, err := handshakeMaster(masterParts[0], masterParts[1])
+		masterConn, err := handshakeMaster(masterParts[0], masterParts[1])
 		if err != nil {
 			fmt.Println("Problem: failed to connect to master")
 			os.Exit(1)
 		}
 		configRepl["role"] = "master"
+
+		go func() {
+			defer (*masterConn).Close()
+			masterReadBuffer := make([]byte, 1024)
+
+			for {
+				n, err := (*masterConn).Read(masterReadBuffer)
+				if err != nil {
+					fmt.Println("Problem: error reading from master connection")
+					return
+				}
+				if n == 0 {
+					break
+				}
+
+				if masterReadBuffer[0] == 36 {
+					rDBFileContents := parseRDBFile(masterReadBuffer[:n])
+					writeRDBFile(rDBFileContents)
+				} else {
+					masterParsedArray := parseRedisArray(masterReadBuffer[:n])
+					handleSet(masterParsedArray) // no OK response back to master
+					// fmt.Println(output)
+				}
+			}
+		}()
 	} else {
 		// if master, set resynchronisation data
+		fmt.Println("I'm a master")
 		configRepl["replicationID"] = randomAlphanumGenerator(40)
 		configRepl["replicationOffset"] = "0"
 		configRepl["role"] = "slave"
 	}
 
 	replicaConns := []*net.Conn{}
-
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -93,6 +116,7 @@ func main() {
 				}
 
 				if parsedArray[0] == "SET" {
+					fmt.Println("HELLO!")
 					for _, replica := range replicaConns {
 						(*replica).Write(encodeBulkArray(parsedArray))
 					}

@@ -1,0 +1,361 @@
+package main
+
+import (
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"hash/crc64"
+	"math"
+	"os"
+	"strconv"
+	"time"
+	"unicode"
+)
+
+type LengthEncodingType int
+
+const (
+	remaining6Bits LengthEncodingType = iota
+	remaining14Bits
+	remaining4CompleteBytes
+	specialCase
+)
+
+func getLengthEncodingType(firstByte byte) LengthEncodingType {
+	prefix := int(firstByte >> 6)
+	switch prefix {
+	case 0:
+		return remaining6Bits
+	case 1:
+		return remaining14Bits
+	case 2:
+		return remaining4CompleteBytes
+	case 3:
+		return specialCase
+	default:
+		return -1
+	}
+}
+
+func decodeValue(encoding []byte) (value string, bytesRead int, err error) {
+	lengthEncodingType := getLengthEncodingType(encoding[0])
+
+	switch lengthEncodingType {
+	case remaining6Bits:
+		length := int(encoding[0] & 0x3F)
+		return string(encoding[1 : 1+length]), 1 + length, nil
+	case remaining14Bits:
+		length := int(int(int(encoding[0]&0x3F)<<8) | int(encoding[1]))
+		return string(encoding[2 : 2+length]), 2 + length, nil
+	case remaining4CompleteBytes:
+		length := int(binary.BigEndian.Uint32(encoding[1:5]))
+		return string(encoding[5 : 5+length]), 5 + length, nil
+	case specialCase:
+		specialCaseType := int(encoding[0] & 0x3F)
+		valueBytes := encoding[1 : 1+int(math.Pow(2, float64(specialCaseType)))]
+		for i, j := 0, len(valueBytes)-1; i < j; i, j = i+1, j-1 {
+			valueBytes[i], valueBytes[j] = valueBytes[j], valueBytes[i]
+		}
+		var valueInt int32
+		for _, b := range valueBytes {
+			valueInt = (valueInt << 8) | int32(b)
+		}
+		return string(valueInt), 1 + int(math.Pow(2, float64(specialCaseType))), nil
+	default:
+		return "", 0, errors.New("could not determine length encoding type")
+	}
+}
+
+func parseRDBFile(fileBinary []byte) []byte {
+	i := 0
+	j := i + 1
+
+	for j < len(fileBinary) && unicode.IsDigit(rune(fileBinary[j])) {
+		j++
+	}
+
+	lengthStr := string(fileBinary[i+1 : j])
+	length, err := strconv.Atoi(lengthStr)
+	if err != nil {
+		fmt.Println("Problem: error thrown when parsing Redis array (1)")
+	}
+	i += 3 + len(lengthStr)
+	return fileBinary[i : i+length]
+}
+
+func readRDBHeader(encoding []byte) (string, int, error) {
+	i := 0
+	for fmt.Sprintf("%02x", encoding[i]) != "fa" {
+		i++
+	}
+
+	return string(encoding[:i]), i, nil
+}
+
+func readMetadata(encoding []byte) (map[string]string, int, error) {
+	mapping := make(map[string]string)
+	i := 0
+	for fmt.Sprintf("%02x", encoding[i]) != "fe" && fmt.Sprintf("%02x", encoding[i]) != "ff" {
+		if fmt.Sprintf("%02x", encoding[i]) != "fa" {
+			return nil, 0, errors.New("expected 'fa' indicator, but found something else")
+		}
+
+		i += 1
+
+		// get metadata key
+		key, n, keyErr := decodeValue(encoding[i:])
+		if keyErr != nil {
+			return nil, 0, keyErr
+		}
+
+		i += n
+
+		value, m, valueErr := decodeValue(encoding[i:])
+		if valueErr != nil {
+			return nil, 0, valueErr
+		}
+
+		i += m
+		mapping[key] = value
+	}
+
+	return mapping, i, nil
+}
+
+func storeInMap(fileEncoding []byte, key, val string, expiryPtr *expiry) bool {
+	// assumes key doesn't already exist in hashmap
+	// dataLength := len(fileEncoding)
+	// insertionIndex := dataLength - 18
+	// insertion := ""
+	// var expiryInfo expiry
+
+	filePointer := 0
+
+	_, n, headerErr := readRDBHeader(fileEncoding[filePointer:])
+	if headerErr != nil {
+		fmt.Println("Problem: error thrown when reading RDB header")
+	}
+	filePointer += n
+
+	metadata, n, metadataErr := readMetadata(fileEncoding[filePointer:])
+	if metadataErr != nil {
+		fmt.Println("Problem: error thrown when reading RDB metadata")
+	}
+	filePointer += n
+
+	fmt.Println(metadata)
+
+	if fmt.Sprintf("%02x", fileEncoding[filePointer]) != "fe" {
+		// TODO: address when database is empty (add a database section)
+		fmt.Println("RDB file is empty")
+	} else if _, exists := getFromMap(fmt.Sprintf("%x", fileEncoding), key); exists {
+		// TODO: address when key already exists (including expiry)
+		return true
+	} else {
+		if expiryPtr != nil {
+			// TODO: update expiry info above
+		}
+
+		// TODO: increment the number of keys, and maybe the number of expires
+	}
+
+	// // value of type string
+	// insertion += "00"
+	// fmt.Println("key: " + key)
+	// fmt.Println("value: " + val)
+	// // insert key
+	// insertion += fmt.Sprintf("%02x", len([]byte(key)))
+	// insertion += fmt.Sprintf("%x", []byte(key))
+
+	// // insert value
+	// insertion += fmt.Sprintf("%02x", len([]byte(val)))
+	// insertion += fmt.Sprintf("%x", []byte(val))
+
+	// // remove old end-of-file checksum
+	// payload := fileEncoding[:insertionIndex] + insertion
+	// // compute new end-of-file checksum
+	// checksum := getChecksum(payload)
+
+	// newFileEncoding := payload + "ff" + checksum
+	// fmt.Println(insertion)
+	// fmt.Println(newFileEncoding)
+
+	// success, err := writeRDBFile([]byte(newFileEncoding))
+	// if !success {
+	// 	fmt.Println("Problem: RDB file could not be written")
+	// 	fmt.Println(err)
+	// 	return false
+	// }
+
+	return true
+}
+
+func getChecksum(fileEncoding string) string {
+	table := crc64.MakeTable(crc64.ISO)
+	code, err := hex.DecodeString(fileEncoding)
+	if err != nil {
+		fmt.Println(err)
+	}
+	checksum := crc64.Checksum(code, table)
+
+	var buffer bytes.Buffer
+
+	binary.Write(&buffer, binary.LittleEndian, checksum)
+	newChecksumBytes := buffer.Bytes()
+	return fmt.Sprintf("%8x", newChecksumBytes)
+}
+
+func getFromMap(fileEncoding, key string) ([]byte, bool) {
+	hashmap, expiries := extractMap(fileEncoding)
+	fmt.Println(hashmap)
+
+	value, valueExists := hashmap[key]
+	if !valueExists {
+		return nullBulkString(), false
+	}
+
+	expiryPtr, expiryPtrExists := expiries[key]
+	if expiryPtrExists && expiryPtr != nil && time.Now().Compare((*expiryPtr).Timestamp) > 0 {
+		return nullBulkString(), false
+	}
+
+	return []byte(value), true
+}
+
+type keyValuePair struct {
+	Key       string
+	Value     string
+	ExpiryPtr *expiry
+}
+
+func extractMap(fileEncoding string) (map[string]string, map[string]*expiry) {
+	dataLength := len(fileEncoding)
+	var intermediateResults []keyValuePair
+	for i := 0; i < dataLength; i += 2 {
+		if fileEncoding[i:i+2] != "fe" {
+			continue
+		}
+
+		if i+4 > dataLength || fileEncoding[i+2:i+4] != "00" {
+			fmt.Println("Warning: expected database index to be 0, terminating early")
+			break
+		}
+		i += 4
+
+		if i+2 > dataLength || fileEncoding[i:i+2] != "fb" {
+			fmt.Printf("Problem: could not find the `fb` flag (at index %d)", i)
+			os.Exit(1)
+		}
+		if i+6 > dataLength {
+			fmt.Println("Problem: could not find hashmap metadata")
+			os.Exit(1)
+		}
+		i += 6
+
+		// remove end of file
+		pairs := fileEncoding[i : dataLength-18]
+
+		intermediateResults = getPairs(pairs)
+
+		break
+	}
+
+	results := map[string]string{}
+	expiryResults := map[string]*expiry{}
+
+	for _, r := range intermediateResults {
+		results[r.Key] = r.Value
+		if r.ExpiryPtr != nil {
+			expiryResults[r.Key] = r.ExpiryPtr
+		}
+	}
+	return results, expiryResults
+}
+
+func getPairs(pairs string) []keyValuePair {
+	dataLength := len(pairs)
+	entities := []string{"key", "value"}
+	results := []keyValuePair{}
+
+	i := 0
+	for i < dataLength {
+		if i+2 > dataLength {
+			fmt.Println("Problem: could not find start of key-value pair")
+			os.Exit(1)
+		}
+		var pair keyValuePair
+
+		switch pairs[i : i+2] {
+		case "fc":
+			// timestamp in milliseconds
+			i += 2
+			if i+16 > dataLength {
+				fmt.Println("Problem: could not find expiry timestamp")
+				os.Exit(1)
+			}
+
+			// switch from little-endian hex to big-endian hex
+			timestampHex, convertErr := toggleEndianHex(pairs[i : i+16])
+			if convertErr != nil {
+				fmt.Printf("Problem: error thrown while converting timestamp from little endian")
+				os.Exit(1)
+			}
+			timestampUnixMilli, err := strconv.ParseInt(timestampHex, 16, 64)
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing expiry timestamp")
+				os.Exit(1)
+			}
+
+			timestamp := time.UnixMilli(timestampUnixMilli)
+			pair.ExpiryPtr = &expiry{timestamp}
+			i += 16
+		}
+		if i+2 > dataLength || pairs[i:i+2] != "00" {
+			fmt.Println("Problem: expected value type to be string")
+			os.Exit(1)
+		}
+
+		i += 2
+
+		for _, entity := range entities {
+			if i+2 > dataLength {
+				fmt.Printf("Problem: could not find %s length", entity)
+				os.Exit(1)
+			}
+
+			entityLengthInt64, err := strconv.ParseInt(pairs[i:i+2], 16, 64)
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing %s length", entity)
+				os.Exit(1)
+			}
+
+			entityLength := int(entityLengthInt64)
+			// fmt.Println(entityLength)
+			i += 2
+
+			if i+(2*entityLength) > dataLength {
+				fmt.Printf("Problem: could not find %s data", entity)
+				os.Exit(1)
+			}
+
+			entityBytes, err := hex.DecodeString(pairs[i : i+(2*entityLength)])
+			if err != nil {
+				fmt.Printf("Problem: error thrown while parsing %s", entity)
+				os.Exit(1)
+			}
+
+			if entity == "key" {
+				pair.Key = string(entityBytes)
+			} else {
+				pair.Value = string(entityBytes)
+			}
+			i += 2 * entityLength
+		}
+
+		results = append(results, pair)
+	}
+
+	return results
+}

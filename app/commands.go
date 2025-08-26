@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -23,7 +24,6 @@ func handleSet(array []string) []byte {
 	}
 
 	rdbContents, err := readRDBFile()
-
 	if err != nil {
 		fmt.Println("Problem: error thrown when reading RDB file")
 	} else {
@@ -39,7 +39,11 @@ func handleSet(array []string) []byte {
 		}
 
 		// store key-value pair into RDB file
-		if storeInMap(*rdbContents, array[1], array[2], expiryPtr) {
+		rdbContentsBytes, decodingErr := hex.DecodeString(*rdbContents)
+		if decodingErr != nil {
+			fmt.Println("Problem: error thrown when converting from hex to byte array")
+		}
+		if storeInMap(rdbContentsBytes, array[1], array[2], expiryPtr) {
 			return encodeSimpleString("OK")
 		}
 	}
@@ -58,7 +62,8 @@ func handleGet(array []string) []byte {
 	if err != nil {
 		fmt.Println("Warning: error thrown when reading RDB file")
 	} else {
-		return getFromMap(*rdbContents, array[1])
+		val, _ := getFromMap(*rdbContents, array[1])
+		return val
 	}
 
 	return nullBulkString()
