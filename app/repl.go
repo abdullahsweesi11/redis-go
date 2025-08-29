@@ -44,6 +44,7 @@ func handshakeMaster(host, port string) error {
 				break
 			}
 
+			fmt.Println(string(masterReadBuffer[:n]))
 			masterParsedArray, types, err := parseRESP(masterReadBuffer[:n])
 			if err != nil {
 				fmt.Println("Problem: error thrown when parsing RESP content from master")

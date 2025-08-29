@@ -69,7 +69,8 @@ func main() {
 			for {
 				n, err := conn.Read(readBuffer)
 				if err != nil {
-					fmt.Println("Problem: error thrown when reading from client")
+					// fmt.Println(err)
+					// fmt.Println("Problem: error thrown when reading from client")
 					continue
 				}
 
