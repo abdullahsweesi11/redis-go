@@ -1,16 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 )
 
-func handshakeMaster(host, port string) (*net.Conn, error) {
+func handshakeMaster(host, port string) error {
 	conn, err := net.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return nil, errors.New("failed to connect to master")
+		return err
 	}
 	// defer conn.Close()
 
@@ -30,7 +29,42 @@ func handshakeMaster(host, port string) (*net.Conn, error) {
 	conn.Write(encodeBulkArray([]string{"PSYNC", "?", "-1"}))
 	conn.Read(readBuffer)
 
-	return &conn, nil
+	go func() {
+		defer conn.Close()
+		masterReadBuffer := make([]byte, 1024)
+		for {
+			n, err := conn.Read(masterReadBuffer)
+			if err != nil {
+				fmt.Println(err)
+				fmt.Println("Problem: error reading from master connection")
+				return
+			}
+
+			if n == 0 {
+				break
+			}
+
+			masterParsedArray, types, err := parseRESP(masterReadBuffer[:n])
+			if err != nil {
+				fmt.Println("Problem: error thrown when parsing RESP content from master")
+				continue
+			}
+
+			for i, arr := range masterParsedArray {
+				if len(arr) == 1 && types[i] == 0 {
+					writeRDBFile([]byte(arr[0]))
+				} else {
+					if arr[0] == "SET" {
+						handleSet(arr) // no OK response back to master
+					} else if sliceEquals(arr, []string{"REPLCONF", "GETACK", "*"}) {
+						conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
+					}
+				}
+			}
+		}
+	}()
+
+	return nil
 }
 
 func sendReplInfo() []byte {

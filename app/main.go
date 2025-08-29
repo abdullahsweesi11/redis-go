@@ -39,44 +39,12 @@ func main() {
 	if configRepl["master"] != "" {
 		fmt.Println("I'm a replica")
 		masterParts := strings.Split(configRepl["master"], " ")
-		masterConn, err := handshakeMaster(masterParts[0], masterParts[1])
+		err := handshakeMaster(masterParts[0], masterParts[1])
 		if err != nil {
 			fmt.Println("Problem: failed to connect to master")
 			os.Exit(1)
 		}
 		configRepl["role"] = "slave"
-
-		go func() {
-			defer (*masterConn).Close()
-			masterReadBuffer := make([]byte, 1024)
-			for {
-				n, err := (*masterConn).Read(masterReadBuffer)
-				if err != nil {
-					fmt.Println("Problem: error reading from master connection")
-					return
-				}
-				if n == 0 {
-					break
-				}
-
-				fmt.Println("Received a command from master. It contained:")
-				fmt.Println(string(masterReadBuffer[:n]))
-				if masterReadBuffer[0] == 36 {
-					rDBFileContents := parseRDBFile(masterReadBuffer[:n])
-					writeRDBFile(rDBFileContents)
-				} else {
-					masterParsedArray := parseRedisArray(masterReadBuffer[:n])
-					fmt.Println(masterParsedArray)
-					for _, command := range masterParsedArray {
-						if command[0] == "SET" {
-							handleSet(command) // no OK response back to master
-						} else if sliceEquals(command, []string{"REPLCONF", "GETACK", "*"}) {
-							(*masterConn).Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
-						}
-					}
-				}
-			}
-		}()
 	} else {
 		// if master, set resynchronisation data
 		fmt.Println("I'm a master")
@@ -99,7 +67,11 @@ func main() {
 			readBuffer := make([]byte, 1024)
 
 			for {
-				n, _ := conn.Read(readBuffer)
+				n, err := conn.Read(readBuffer)
+				if err != nil {
+					fmt.Println("Problem: error thrown when reading from client")
+					continue
+				}
 
 				if n == 0 {
 					break
@@ -110,50 +82,82 @@ func main() {
 					conn.Write([]byte("+PONG\r\n"))
 				}
 
-				parsedArray := parseRedisArray(readBuffer[:n])
+				parsedArray, _, err := parseRESP(readBuffer[:n])
+				if err != nil {
+
+				}
 				fmt.Println(parsedArray)
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "ECHO" {
 					output := handleEcho(parsedArray[0])
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "SET" {
 					for replica, _ := range replicaConns {
 						_, err := (*replica).Write(encodeBulkArray(parsedArray[0]))
 						if err != nil {
-							fmt.Println("Problem: failed to write to replica")
+							fmt.Println("Problem: error thrown when writing to replica")
+							continue
 						}
 					}
 					output := handleSet(parsedArray[0])
 					if configRepl["role"] == "master" {
-						conn.Write(output)
+						_, err := conn.Write(output)
+						if err != nil {
+							fmt.Println("Problem: error thrown when writing to client")
+							continue
+						}
 					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "GET" {
 					output := handleGet(parsedArray[0])
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && len(parsedArray[0]) >= 2 && parsedArray[0][0] == "CONFIG" && parsedArray[0][1] == "GET" {
 					output := handleConfigGet(parsedArray[0])
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "KEYS" {
 					output := handleKeys(parsedArray[0])
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "INFO" {
 					output := handleInfo(parsedArray[0])
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "REPLCONF" {
 					output := encodeSimpleString("OK")
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "PSYNC" {
@@ -163,12 +167,20 @@ func main() {
 						configRepl["replicationOffset"],
 					)
 					output := encodeSimpleString(resyncCommand)
-					conn.Write(output)
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 
 					binaryCode := getEmptyRDBFile()
 					length := len(binaryCode)
 					output = encodeRDBFile(length, binaryCode)
-					conn.Write(output)
+					_, err = conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
 
 					replicaConns[&conn] = ""
 

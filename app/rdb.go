@@ -129,6 +129,7 @@ func decodeLength(encoding []byte) (int, error) {
 }
 
 func parseRDBFile(fileBinary []byte) []byte {
+	fmt.Println("received an RDB file")
 	i := 0
 	j := i + 1
 

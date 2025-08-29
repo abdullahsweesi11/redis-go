@@ -52,56 +52,170 @@ func parseFlags() {
 	configRepl["master"] = *master
 }
 
-func parseRedisArray(RESPArray []byte) [][]string {
+func parseRESP(RESPContent []byte) ([][]string, []int, error) {
+	// first parameter represents the decoded text
+	// second parameter represents the purpose of text each one is (0 for RDB file contents, 1 for command, 2 for other)
 
-	segmentLength := len(RESPArray)
+	contentLength := len(RESPContent)
 	results := [][]string{}
+	RESPTypes := []int{} // representing the type of each RESP segment (e.g. simple string, bulk string, bulk array)
+	purposes := []int{}  // representing the purpose of each text
 
-	i := 0 // array pointers
-	for i < segmentLength-1 {
-		j := i + 1
-
-		for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
-			j++
-		}
-
-		lengthStr := string(RESPArray[i+1 : j])
-		length, err := strconv.Atoi(lengthStr)
+	i := 0
+	for i < contentLength-1 {
+		RESPType, err := categoriseRESPType(string(RESPContent[i]))
 		if err != nil {
-			fmt.Println("Problem: error thrown when parsing Redis array (1)")
-			os.Exit(1)
+			return nil, nil, err
 		}
 
-		i += 3 + len(lengthStr) // shift right from `*[length]\r\n`
-
-		result := []string{}
-		for range length {
-			k := i + 1
-			for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
-				k++
+		switch RESPType {
+		case 0:
+			j := i + 1
+			for j < len(RESPContent)-1 && RESPContent[j] != 13 && RESPContent[j+1] != 10 {
+				j++
 			}
 
-			wordLengthStr := string(RESPArray[i+1 : k])
-			wordLength, err := strconv.Atoi(wordLengthStr)
+			results = append(results, []string{string(RESPContent[i+1 : j])})
+			RESPTypes = append(RESPTypes, 0)
+			purposes = append(purposes, 2)
+
+			i = j + 2
+		case 1:
+			j := i + 1
+
+			for j < len(RESPContent) && unicode.IsDigit(rune(RESPContent[j])) {
+				j++
+			}
+
+			lengthStr := string(RESPContent[i+1 : j])
+			length, err := strconv.Atoi(lengthStr)
 			if err != nil {
-				fmt.Println("Problem: error thrown when parsing Redis array (2)")
+				fmt.Println("Problem: error thrown when parsing Redis array (1)")
+			}
+
+			i += 3 + len(lengthStr)
+
+			results = append(results, []string{string(RESPContent[i : i+length])})
+			RESPTypes = append(RESPTypes, 1)
+			purposes = append(purposes, 0)
+
+			i += 2 + length
+		case 2:
+			j := i + 1
+
+			for j < len(RESPContent) && unicode.IsDigit(rune(RESPContent[j])) {
+				j++
+			}
+
+			lengthStr := string(RESPContent[i+1 : j])
+			length, err := strconv.Atoi(lengthStr)
+			if err != nil {
+				fmt.Println("Problem: error thrown when parsing Redis array (1)")
 				os.Exit(1)
 			}
 
-			i += 3 + len(wordLengthStr)
-			end := i + wordLength
+			i += 3 + len(lengthStr)
 
-			element := RESPArray[i:end]
-			result = append(result, string(element))
+			result := []string{}
+			for range length {
+				k := i + 1
+				for k < len(RESPContent) && unicode.IsDigit(rune(RESPContent[k])) {
+					k++
+				}
 
-			i = end + 2
+				wordLengthStr := string(RESPContent[i+1 : k])
+				wordLength, err := strconv.Atoi(wordLengthStr)
+				if err != nil {
+					fmt.Println("Problem: error thrown when parsing Redis array (2)")
+					os.Exit(1)
+				}
+
+				i += 3 + len(wordLengthStr)
+
+				result = append(result, string(RESPContent[i:i+wordLength]))
+
+				i += 2 + wordLength
+			}
+
+			results = append(results, result)
+		default:
+			return nil, nil, errors.New("First character is not a valid option")
 		}
-
-		results = append(results, result)
 	}
 
-	return results
+	return results, purposes, nil
 }
+
+func categoriseRESPType(firstLetter string) (int, error) {
+	if len(firstLetter) != 1 {
+		return -1, errors.New("Argument must be a single character")
+	}
+
+	switch firstLetter {
+	case "+":
+		return 0, nil
+	case "$":
+		return 1, nil
+	case "*":
+		return 2, nil
+	default:
+		return -1, errors.New("First character is not a valid option")
+	}
+}
+
+// func parseRedisArray(RESPArray []byte) ([][]string, []int) {
+// 	// first parameter represents the decoded text
+// 	// second parameter represents the type of text each one is (0 for RDB file contents, 1 for command)
+
+// 	segmentLength := len(RESPArray)
+// 	results := [][]string{}
+// 	types := []int{}
+
+// 	i := 0 // array pointers
+// 	for i < segmentLength-1 {
+// 		j := i + 1
+
+// 		for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
+// 			j++
+// 		}
+
+// 		lengthStr := string(RESPArray[i+1 : j])
+// 		length, err := strconv.Atoi(lengthStr)
+// 		if err != nil {
+// 			fmt.Println("Problem: error thrown when parsing Redis array (1)")
+// 			os.Exit(1)
+// 		}
+
+// 		i += 3 + len(lengthStr) // shift right from `[length]\r\n`
+
+// 		result := []string{}
+// 		for range length {
+// 			k := i + 1
+// 			for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
+// 				k++
+// 			}
+
+// 			wordLengthStr := string(RESPArray[i+1 : k])
+// 			wordLength, err := strconv.Atoi(wordLengthStr)
+// 			if err != nil {
+// 				fmt.Println("Problem: error thrown when parsing Redis array (2)")
+// 				os.Exit(1)
+// 			}
+
+// 			i += 3 + len(wordLengthStr)
+// 			end := i + wordLength
+
+// 			element := RESPArray[i:end]
+// 			result = append(result, string(element))
+
+// 			i = end + 2
+// 		}
+
+// 		results = append(results, result)
+// 	}
+
+// 	return results
+// }
 
 func sliceEquals(first, second []string) bool {
 	return reflect.DeepEqual(first, second)
