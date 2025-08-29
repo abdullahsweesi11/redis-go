@@ -18,6 +18,9 @@ func parseFlags() {
 
 	flag.Parse()
 
+	configRDB["dir"] = *dir
+	configRDB["dbfilename"] = *dbFilename
+
 	// Set RDB config data
 	if *dir == "" || *dbFilename == "" {
 		// should choose a different home, since it isn't a temporary file
@@ -48,49 +51,55 @@ func parseFlags() {
 	configRepl["master"] = *master
 }
 
-func parseRedisArray(RESPArray []byte) []string {
+func parseRedisArray(RESPArray []byte) [][]string {
+
+	segmentLength := len(RESPArray)
+	results := [][]string{}
 
 	i := 0 // array pointers
-	j := i + 1
+	for i < segmentLength-1 {
+		j := i + 1
 
-	for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
-		j++
-	}
-
-	lengthStr := string(RESPArray[i+1 : j])
-	length, err := strconv.Atoi(lengthStr)
-	if err != nil {
-		fmt.Println("Problem: error thrown when parsing Redis array (1)")
-		os.Exit(1)
-	}
-
-	i += 3 + len(lengthStr) // shift right from `*[length]\r\n`
-
-	result := []string{}
-	for range length {
-		// get length of element
-		k := i + 1
-		for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
-			k++
+		for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
+			j++
 		}
 
-		wordLengthStr := string(RESPArray[i+1 : k])
-		wordLength, err := strconv.Atoi(wordLengthStr)
+		lengthStr := string(RESPArray[i+1 : j])
+		length, err := strconv.Atoi(lengthStr)
 		if err != nil {
-			fmt.Println("Problem: error thrown when parsing Redis array (2)")
+			fmt.Println("Problem: error thrown when parsing Redis array (1)")
 			os.Exit(1)
 		}
 
-		i += 3 + len(wordLengthStr)
-		end := i + wordLength
+		i += 3 + len(lengthStr) // shift right from `*[length]\r\n`
 
-		element := RESPArray[i:end]
-		result = append(result, string(element))
+		result := []string{}
+		for range length {
+			k := i + 1
+			for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
+				k++
+			}
 
-		i = end + 2
+			wordLengthStr := string(RESPArray[i+1 : k])
+			wordLength, err := strconv.Atoi(wordLengthStr)
+			if err != nil {
+				fmt.Println("Problem: error thrown when parsing Redis array (2)")
+				os.Exit(1)
+			}
+
+			i += 3 + len(wordLengthStr)
+			end := i + wordLength
+
+			element := RESPArray[i:end]
+			result = append(result, string(element))
+
+			i = end + 2
+		}
+
+		results = append(results, result)
 	}
 
-	return result
+	return results
 }
 
 func encodeSimpleString(output string) []byte {
@@ -121,6 +130,24 @@ func encodeRDBFile(length int, content []byte) []byte {
 func nullBulkString() []byte {
 	result := "$-1\r\n"
 	return []byte(result)
+}
+
+func toggleEndianBinary(input string) (string, error) {
+	// toggles between little-endian and big-endian for hex strings
+	if len(input)%8 != 0 {
+		toBePrepended := ""
+		for len(input)%8 != 0 {
+			toBePrepended += "0"
+		}
+		input = toBePrepended + input
+	}
+
+	output := ""
+	for i := len(input) - 8; i >= 0; i -= 8 {
+		output += input[i : i+8]
+	}
+
+	return output, nil
 }
 
 func toggleEndianHex(input string) (string, error) {

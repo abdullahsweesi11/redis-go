@@ -27,7 +27,9 @@ func writeRDBFile(content []byte) (bool, error) {
 	if writeErr != nil {
 		return false, writeErr
 	}
-	fmt.Println("Finished writing to RDB file!")
+
+	// contents, _ := readRDBFile()
+	// fmt.Println(*contents)
 	return true, nil
 }
 

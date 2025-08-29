@@ -1,10 +1,5 @@
 package main
 
-// Todo:
-// - There's a need for local storage on SET, so that replicas can update a DB which the master can access
-// - This involves changes to both SET and GET
-// - Expiry might be an annoyance
-
 import (
 	"bytes"
 	"fmt"
@@ -49,12 +44,11 @@ func main() {
 			fmt.Println("Problem: failed to connect to master")
 			os.Exit(1)
 		}
-		configRepl["role"] = "master"
+		configRepl["role"] = "slave"
 
 		go func() {
 			defer (*masterConn).Close()
 			masterReadBuffer := make([]byte, 1024)
-
 			for {
 				n, err := (*masterConn).Read(masterReadBuffer)
 				if err != nil {
@@ -64,14 +58,14 @@ func main() {
 				if n == 0 {
 					break
 				}
-
 				if masterReadBuffer[0] == 36 {
 					rDBFileContents := parseRDBFile(masterReadBuffer[:n])
 					writeRDBFile(rDBFileContents)
 				} else {
 					masterParsedArray := parseRedisArray(masterReadBuffer[:n])
-					handleSet(masterParsedArray) // no OK response back to master
-					// fmt.Println(output)
+					for _, command := range masterParsedArray {
+						handleSet(command) // no OK response back to master
+					}
 				}
 			}
 		}()
@@ -80,10 +74,10 @@ func main() {
 		fmt.Println("I'm a master")
 		configRepl["replicationID"] = randomAlphanumGenerator(40)
 		configRepl["replicationOffset"] = "0"
-		configRepl["role"] = "slave"
+		configRepl["role"] = "master"
 	}
 
-	replicaConns := []*net.Conn{}
+	replicaConns := map[*net.Conn]string{}
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -93,6 +87,7 @@ func main() {
 
 		go func() {
 			defer conn.Close()
+			defer delete(replicaConns, &conn)
 			readBuffer := make([]byte, 1024)
 
 			for {
@@ -110,48 +105,50 @@ func main() {
 				parsedArray := parseRedisArray(readBuffer[:n])
 				fmt.Println(parsedArray)
 
-				if parsedArray[0] == "ECHO" {
-					output := handleEcho(parsedArray)
+				if len(parsedArray) == 1 && parsedArray[0][0] == "ECHO" {
+					output := handleEcho(parsedArray[0])
 					conn.Write(output)
 				}
 
-				if parsedArray[0] == "SET" {
-					fmt.Println("HELLO!")
-					for _, replica := range replicaConns {
-						(*replica).Write(encodeBulkArray(parsedArray))
+				if len(parsedArray) == 1 && parsedArray[0][0] == "SET" {
+					for replica, _ := range replicaConns {
+						_, err := (*replica).Write(encodeBulkArray(parsedArray[0]))
+						if err != nil {
+							fmt.Println("Problem: failed to write to replica")
+						}
 					}
-					output := handleSet(parsedArray)
+					output := handleSet(parsedArray[0])
 					if configRepl["role"] == "master" {
 						conn.Write(output)
 					}
 				}
 
-				if parsedArray[0] == "GET" {
-					output := handleGet(parsedArray)
+				if len(parsedArray) == 1 && parsedArray[0][0] == "GET" {
+					output := handleGet(parsedArray[0])
 					conn.Write(output)
 				}
 
-				if len(parsedArray) >= 2 && parsedArray[0] == "CONFIG" && parsedArray[1] == "GET" {
-					output := handleConfigGet(parsedArray)
+				if len(parsedArray) == 1 && len(parsedArray[0]) >= 2 && parsedArray[0][0] == "CONFIG" && parsedArray[0][1] == "GET" {
+					output := handleConfigGet(parsedArray[0])
 					conn.Write(output)
 				}
 
-				if parsedArray[0] == "KEYS" {
-					output := handleKeys(parsedArray)
+				if len(parsedArray) == 1 && parsedArray[0][0] == "KEYS" {
+					output := handleKeys(parsedArray[0])
 					conn.Write(output)
 				}
 
-				if parsedArray[0] == "INFO" {
-					output := handleInfo(parsedArray)
+				if len(parsedArray) == 1 && parsedArray[0][0] == "INFO" {
+					output := handleInfo(parsedArray[0])
 					conn.Write(output)
 				}
 
-				if parsedArray[0] == "REPLCONF" {
+				if len(parsedArray) == 1 && parsedArray[0][0] == "REPLCONF" {
 					output := encodeSimpleString("OK")
 					conn.Write(output)
 				}
 
-				if parsedArray[0] == "PSYNC" {
+				if len(parsedArray) == 1 && parsedArray[0][0] == "PSYNC" {
 					resyncCommand := fmt.Sprintf(
 						"FULLRESYNC %s %s",
 						configRepl["replicationID"],
@@ -165,7 +162,8 @@ func main() {
 					output = encodeRDBFile(length, binaryCode)
 					conn.Write(output)
 
-					replicaConns = append(replicaConns, &conn)
+					replicaConns[&conn] = ""
+
 				}
 			}
 		}()

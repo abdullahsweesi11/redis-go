@@ -23,6 +23,15 @@ const (
 	specialCase
 )
 
+func encodeValue(value string) (string, error) {
+	length := len([]byte(value))
+
+	encodedLength, err := encodeLength(length)
+	encodedValue := fmt.Sprintf("%x", []byte(value))
+
+	return encodedLength + encodedValue, err
+}
+
 func getLengthEncodingType(firstByte byte) LengthEncodingType {
 	prefix := int(firstByte >> 6)
 	switch prefix {
@@ -65,6 +74,57 @@ func decodeValue(encoding []byte) (value string, bytesRead int, err error) {
 		return string(valueInt), 1 + int(math.Pow(2, float64(specialCaseType))), nil
 	default:
 		return "", 0, errors.New("could not determine length encoding type")
+	}
+}
+
+func encodeLength(length int) (string, error) {
+	if length < (1 << 6) {
+		return fmt.Sprintf("%02x", length), nil
+	} else if length < (1 << 14) {
+		binaryLength := fmt.Sprintf("%014b", length)
+		decimalLength, err := strconv.ParseInt("01"+binaryLength, 2, 64)
+		if err != nil {
+			return "", errors.New("could not convert binary length encoding into decimal (1)")
+		}
+		return fmt.Sprintf("%04x", decimalLength), nil
+	} else if uint64(length) < (1 << 32) {
+		binaryLength, binaryErr := toggleEndianBinary(fmt.Sprintf("%032b", length))
+		if binaryErr != nil {
+			return "", errors.New("could not convert from big-endian to little-endian")
+		}
+		decimalLength, err := strconv.ParseInt("10000000"+binaryLength, 2, 64)
+		if err != nil {
+			return "", errors.New("could not convert binary length encoding into decimal (2)")
+		}
+		return fmt.Sprintf("%010x", decimalLength), nil
+	}
+
+	return "", errors.New("value length is too large")
+}
+
+func decodeLength(encoding []byte) (int, error) {
+	lengthEncodingType := getLengthEncodingType(encoding[0])
+
+	switch lengthEncodingType {
+	case remaining6Bits:
+		return int(encoding[0] & 0x3F), nil
+	case remaining14Bits:
+		return int(int(int(encoding[0]&0x3F)<<8) | int(encoding[1])), nil
+	case remaining4CompleteBytes:
+		return int(binary.BigEndian.Uint32(encoding[1:5])), nil
+	case specialCase:
+		specialCaseType := int(encoding[0] & 0x3F)
+		valueBytes := encoding[1 : 1+int(math.Pow(2, float64(specialCaseType)))]
+		for i, j := 0, len(valueBytes)-1; i < j; i, j = i+1, j-1 {
+			valueBytes[i], valueBytes[j] = valueBytes[j], valueBytes[i]
+		}
+		var valueInt int32
+		for _, b := range valueBytes {
+			valueInt = (valueInt << 8) | int32(b)
+		}
+		return len(string(valueInt)), nil
+	default:
+		return 0, errors.New("could not determine length encoding type")
 	}
 }
 
@@ -126,10 +186,7 @@ func readMetadata(encoding []byte) (map[string]string, int, error) {
 
 func storeInMap(fileEncoding []byte, key, val string, expiryPtr *expiry) bool {
 	// assumes key doesn't already exist in hashmap
-	// dataLength := len(fileEncoding)
-	// insertionIndex := dataLength - 18
-	// insertion := ""
-	// var expiryInfo expiry
+	toBeInserted := ""
 
 	filePointer := 0
 
@@ -139,77 +196,208 @@ func storeInMap(fileEncoding []byte, key, val string, expiryPtr *expiry) bool {
 	}
 	filePointer += n
 
-	metadata, n, metadataErr := readMetadata(fileEncoding[filePointer:])
+	_, n, metadataErr := readMetadata(fileEncoding[filePointer:])
 	if metadataErr != nil {
 		fmt.Println("Problem: error thrown when reading RDB metadata")
 	}
 	filePointer += n
 
-	fmt.Println(metadata)
-
 	if fmt.Sprintf("%02x", fileEncoding[filePointer]) != "fe" {
 		// TODO: address when database is empty (add a database section)
-		fmt.Println("RDB file is empty")
-	} else if _, exists := getFromMap(fmt.Sprintf("%x", fileEncoding), key); exists {
-		// TODO: address when key already exists (including expiry)
-		return true
-	} else {
-		if expiryPtr != nil {
-			// TODO: update expiry info above
+		toBeInserted += "fe00fb01"
+
+		if expiryPtr == nil {
+			toBeInserted += "00"
+		} else {
+			timestampHex, err := toggleEndianHex(fmt.Sprintf("%016x", (*expiryPtr).Timestamp.UnixMilli()))
+			if err != nil {
+				fmt.Println("Problem: error thrown when converting expiry timestamp to little-endian")
+			}
+			toBeInserted += "01fc" + timestampHex
 		}
 
-		// TODO: increment the number of keys, and maybe the number of expires
+		encodedKey, keyErr := encodeValue(key)
+		if keyErr != nil {
+			fmt.Println("Problem: error thrown when encoding key")
+			return false
+		}
+		encodedValue, valueErr := encodeValue(val)
+		if valueErr != nil {
+			fmt.Println("Problem: error thrown when encoding value")
+			return false
+		}
+
+		toBeInserted += "00" + encodedKey + encodedValue
+
+	} else {
+		originalFilePointer := filePointer
+		if _, exists := getFromMap(fmt.Sprintf("%x", fileEncoding), key); exists {
+			// TODO: address when key already exists (including expiry)
+
+		} else {
+			// fe section
+			filePointer += 2
+			toBeInserted += "fe00"
+
+			// fb section
+			filePointer += 1
+			toBeInserted += "fb"
+
+			databaseSize, decodeDatabaseLengthErr := decodeLength(fileEncoding[filePointer:])
+			if decodeDatabaseLengthErr != nil {
+				fmt.Println("Problem: error thrown when decoding length of entire database")
+				return false
+			}
+			databaseSize += 1
+			filePointer += 1
+
+			expirySize, decodeExpiryLengthErr := decodeLength(fileEncoding[filePointer:])
+			if decodeExpiryLengthErr != nil {
+				fmt.Println("Problem: error thrown when decoding length of expiry database")
+				return false
+			}
+			if expiryPtr != nil {
+				expirySize += 1
+			}
+			filePointer += 1
+
+			encodedDatabaseLength, encodeDatabaseLengthErr := encodeLength(databaseSize)
+			if encodeDatabaseLengthErr != nil {
+				fmt.Println("Problem: error thrown when encoding length of entire database")
+			}
+			encodedExpiryLength, encodeExpiryLengthErr := encodeLength(expirySize)
+			if encodeExpiryLengthErr != nil {
+				fmt.Println("Problem: error thrown when encoding length of expiry database")
+			}
+			toBeInserted += encodedDatabaseLength + encodedExpiryLength
+
+			if expiryPtr != nil {
+				timestampHex, err := toggleEndianHex(fmt.Sprintf("%016x", (*expiryPtr).Timestamp.UnixMilli()))
+				if err != nil {
+					fmt.Println("Problem: error thrown when converting expiry timestamp to little-endian")
+				}
+				toBeInserted += "fc" + timestampHex
+			}
+
+			encodedKey, keyErr := encodeValue(key)
+			if keyErr != nil {
+				fmt.Println("Problem: error thrown when encoding key")
+				return false
+			}
+			encodedValue, valueErr := encodeValue(val)
+			if valueErr != nil {
+				fmt.Println("Problem: error thrown when encoding value")
+				return false
+			}
+
+			toBeInserted += "00" + encodedKey + encodedValue
+		}
+
+		for fmt.Sprintf("%02x", fileEncoding[filePointer]) != "ff" {
+			if fmt.Sprintf("%02x", fileEncoding[filePointer]) == "00" {
+				filePointer += 1
+				toBeInserted += "00"
+				_, n, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a key")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", n, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+
+				_, m, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a value")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", m, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+			} else if fmt.Sprintf("%02x", fileEncoding[filePointer]) == "fc" {
+				filePointer += 1
+				toBeInserted += "fc" + fmt.Sprintf("%x", fileEncoding[filePointer:filePointer+8])
+				filePointer += 8
+
+				toBeInserted += "00"
+				_, n, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a key")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", n, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+
+				_, m, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a value")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", m, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+			} else if fmt.Sprintf("%02x", fileEncoding[filePointer]) == "fd" {
+				filePointer += 1
+				toBeInserted += "fd" + fmt.Sprintf("%x", fileEncoding[filePointer:filePointer+4])
+				filePointer += 4
+
+				toBeInserted += "00"
+				_, n, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a key")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", n, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+
+				_, m, err := decodeValue(fileEncoding[filePointer:])
+				if err != nil {
+					fmt.Println("Problem: error thrown when decoding the value of a value")
+					return false
+				}
+				toBeInserted += fmt.Sprintf("%*x", m, fileEncoding[filePointer:filePointer+n])
+				filePointer += n
+			} else {
+				fmt.Println("Problem: unexpected first byte for a database entry")
+				return false
+			}
+		}
+
+		filePointer = originalFilePointer
 	}
 
-	// // value of type string
-	// insertion += "00"
-	// fmt.Println("key: " + key)
-	// fmt.Println("value: " + val)
-	// // insert key
-	// insertion += fmt.Sprintf("%02x", len([]byte(key)))
-	// insertion += fmt.Sprintf("%x", []byte(key))
+	databaseBytes, decodeHexErr := hex.DecodeString(toBeInserted)
+	if decodeHexErr != nil {
+		fmt.Println("Problem: error thrown when decoding database hex encoding")
+		return false
+	}
+	payload := append(fileEncoding[:filePointer], databaseBytes...)
 
-	// // insert value
-	// insertion += fmt.Sprintf("%02x", len([]byte(val)))
-	// insertion += fmt.Sprintf("%x", []byte(val))
+	// compute new end-of-file checksum
+	checksum := getChecksum(payload)
 
-	// // remove old end-of-file checksum
-	// payload := fileEncoding[:insertionIndex] + insertion
-	// // compute new end-of-file checksum
-	// checksum := getChecksum(payload)
+	newFileEncoding := append(append(payload, 0xFF), checksum...)
 
-	// newFileEncoding := payload + "ff" + checksum
-	// fmt.Println(insertion)
-	// fmt.Println(newFileEncoding)
-
-	// success, err := writeRDBFile([]byte(newFileEncoding))
-	// if !success {
-	// 	fmt.Println("Problem: RDB file could not be written")
-	// 	fmt.Println(err)
-	// 	return false
-	// }
+	success, _ := writeRDBFile(newFileEncoding)
+	if !success {
+		fmt.Println("Problem: RDB file could not be written")
+		return false
+	}
 
 	return true
 }
 
-func getChecksum(fileEncoding string) string {
-	table := crc64.MakeTable(crc64.ISO)
-	code, err := hex.DecodeString(fileEncoding)
-	if err != nil {
-		fmt.Println(err)
-	}
-	checksum := crc64.Checksum(code, table)
+func getChecksum(payload []byte) []byte {
+	table := crc64.MakeTable(crc64.ECMA)
+	checksum := crc64.Checksum(payload, table)
 
 	var buffer bytes.Buffer
 
 	binary.Write(&buffer, binary.LittleEndian, checksum)
 	newChecksumBytes := buffer.Bytes()
-	return fmt.Sprintf("%8x", newChecksumBytes)
+	return newChecksumBytes
 }
 
 func getFromMap(fileEncoding, key string) ([]byte, bool) {
 	hashmap, expiries := extractMap(fileEncoding)
-	fmt.Println(hashmap)
+	// fmt.Printf("After getting the RDB file hashmap, the result was: %v\n", hashmap)
 
 	value, valueExists := hashmap[key]
 	if !valueExists {
@@ -221,7 +409,7 @@ func getFromMap(fileEncoding, key string) ([]byte, bool) {
 		return nullBulkString(), false
 	}
 
-	return []byte(value), true
+	return encodeSimpleString(value), true
 }
 
 type keyValuePair struct {

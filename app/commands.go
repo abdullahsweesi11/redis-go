@@ -95,7 +95,6 @@ func handleKeys(array []string) []byte {
 	rdbContents, err := readRDBFile()
 	if err != nil {
 		fmt.Println("Problem: error thrown when reading RDB file")
-		fmt.Println(err)
 		os.Exit(1)
 	}
 
