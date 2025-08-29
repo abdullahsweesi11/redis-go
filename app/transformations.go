@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"unicode"
 )
@@ -100,6 +101,10 @@ func parseRedisArray(RESPArray []byte) [][]string {
 	}
 
 	return results
+}
+
+func sliceEquals(first, second []string) bool {
+	return reflect.DeepEqual(first, second)
 }
 
 func encodeSimpleString(output string) []byte {

@@ -58,13 +58,21 @@ func main() {
 				if n == 0 {
 					break
 				}
+
+				fmt.Println("Received a command from master. It contained:")
+				fmt.Println(string(masterReadBuffer[:n]))
 				if masterReadBuffer[0] == 36 {
 					rDBFileContents := parseRDBFile(masterReadBuffer[:n])
 					writeRDBFile(rDBFileContents)
 				} else {
 					masterParsedArray := parseRedisArray(masterReadBuffer[:n])
+					fmt.Println(masterParsedArray)
 					for _, command := range masterParsedArray {
-						handleSet(command) // no OK response back to master
+						if command[0] == "SET" {
+							handleSet(command) // no OK response back to master
+						} else if sliceEquals(command, []string{"REPLCONF", "GETACK", "*"}) {
+							(*masterConn).Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
+						}
 					}
 				}
 			}
