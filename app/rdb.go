@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"unicode"
 )
 
 type LengthEncodingType int
@@ -128,23 +127,23 @@ func decodeLength(encoding []byte) (int, error) {
 	}
 }
 
-func parseRDBFile(fileBinary []byte) []byte {
-	fmt.Println("received an RDB file")
-	i := 0
-	j := i + 1
+// func parseRDBFile(fileBinary []byte) []byte {
+// 	fmt.Println("received an RDB file")
+// 	i := 0
+// 	j := i + 1
 
-	for j < len(fileBinary) && unicode.IsDigit(rune(fileBinary[j])) {
-		j++
-	}
+// 	for j < len(fileBinary) && unicode.IsDigit(rune(fileBinary[j])) {
+// 		j++
+// 	}
 
-	lengthStr := string(fileBinary[i+1 : j])
-	length, err := strconv.Atoi(lengthStr)
-	if err != nil {
-		fmt.Println("Problem: error thrown when parsing Redis array (1)")
-	}
-	i += 3 + len(lengthStr)
-	return fileBinary[i : i+length]
-}
+// 	lengthStr := string(fileBinary[i+1 : j])
+// 	length, err := strconv.Atoi(lengthStr)
+// 	if err != nil {
+// 		fmt.Println("Problem: error thrown when parsing Redis array (1)")
+// 	}
+// 	i += 3 + len(lengthStr)
+// 	return fileBinary[i : i+length]
+// }
 
 func readRDBHeader(encoding []byte) (string, int, error) {
 	i := 0

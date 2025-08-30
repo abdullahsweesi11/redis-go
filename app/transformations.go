@@ -54,7 +54,8 @@ func parseFlags() {
 
 func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 	// first parameter represents the decoded text
-	// second parameter represents the purpose of text each one is (0 for RDB file contents, 1 for command, 2 for other)
+	// second parameter represents the purpose of text each one is
+	//   (0 for RDB file contents, 1 for command, 2 for other)
 
 	contentLength := len(RESPContent)
 	results := [][]string{}
@@ -99,7 +100,10 @@ func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 			RESPTypes = append(RESPTypes, 1)
 			purposes = append(purposes, 0)
 
-			i += 2 + length
+			i += length
+			if i < len(RESPContent)-1 && RESPContent[i] == 13 && RESPContent[i+1] == 10 {
+				i += 2
+			}
 		case 2:
 			j := i + 1
 
@@ -138,8 +142,10 @@ func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 			}
 
 			results = append(results, result)
+			RESPTypes = append(RESPTypes, 2)
+			purposes = append(purposes, 1)
 		default:
-			return nil, nil, errors.New("First character is not a valid option")
+			return nil, nil, errors.New("first character is not a valid option")
 		}
 	}
 
@@ -148,7 +154,7 @@ func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 
 func categoriseRESPType(firstLetter string) (int, error) {
 	if len(firstLetter) != 1 {
-		return -1, errors.New("Argument must be a single character")
+		return -1, errors.New("argument must be a single character")
 	}
 
 	switch firstLetter {
@@ -159,7 +165,8 @@ func categoriseRESPType(firstLetter string) (int, error) {
 	case "*":
 		return 2, nil
 	default:
-		return -1, errors.New("First character is not a valid option")
+		fmt.Println(firstLetter)
+		return -1, errors.New("first character is not a valid option")
 	}
 }
 

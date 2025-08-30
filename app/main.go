@@ -38,6 +38,7 @@ func main() {
 	// If replica, connect to master instance
 	if configRepl["master"] != "" {
 		fmt.Println("I'm a replica")
+		configRepl["numBytesProcessed"] = "0"
 		masterParts := strings.Split(configRepl["master"], " ")
 		err := handshakeMaster(masterParts[0], masterParts[1])
 		if err != nil {
