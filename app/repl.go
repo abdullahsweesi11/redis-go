@@ -8,6 +8,9 @@ import (
 )
 
 func handshakeMaster(host, port string) error {
+	bytesProcessed := 0
+	receivedACk := false
+
 	conn, err := net.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
 		return err
@@ -68,6 +71,7 @@ func handshakeMaster(host, port string) error {
 		} else {
 			if sliceEquals(arr, []string{"REPLCONF", "GETACK", "*"}) {
 				conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
+				receivedACk = true
 				err := incrementBytesProcessed(37)
 				if err != nil {
 					fmt.Println("Problem: error thrown when incrementing bytes processed")
@@ -94,7 +98,9 @@ func handshakeMaster(host, port string) error {
 
 			// increment bytes processed
 			fmt.Println(string(readBuffer[:n]))
-			err = incrementBytesProcessed(n)
+			if receivedACk {
+				bytesProcessed += n
+			}
 			if err != nil {
 				fmt.Println("Problem: error thrown when incrementing bytes processed")
 			}
@@ -113,19 +119,17 @@ func handshakeMaster(host, port string) error {
 						handleSet(arr) // no OK response back to master
 					} else if sliceEquals(arr, []string{"REPLCONF", "GETACK", "*"}) {
 						// don't count this REPLCONF command
-						err = incrementBytesProcessed(-37)
-						if err != nil {
-							fmt.Println("Problem: error thrown when incrementing bytes processed")
-							continue
+						if !receivedACk {
+							receivedACk = true
+						} else {
+							bytesProcessed -= 37
 						}
 
-						conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", (configRepl["numBytesProcessed"])}))
+						bytesProcessedString := strconv.Itoa(bytesProcessed)
 
-						err = incrementBytesProcessed(37)
-						if err != nil {
-							fmt.Println("Problem: error thrown when incrementing bytes processed")
-							continue
-						}
+						conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", bytesProcessedString}))
+
+						bytesProcessed += 37
 					}
 				}
 			}
