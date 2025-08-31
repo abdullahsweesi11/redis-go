@@ -188,7 +188,7 @@ func main() {
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "WAIT" {
-					output := handleWait(parsedArray[0])
+					output := handleWait(parsedArray[0], len(replicaConns))
 					_, err := conn.Write(output)
 					if err != nil {
 						fmt.Println("Problem: error thrown when writing to client")

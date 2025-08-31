@@ -119,6 +119,6 @@ func handleInfo(array []string) []byte {
 	}
 }
 
-func handleWait(array []string) []byte {
-	return encodeInteger(0)
+func handleWait(array []string, numReplicas int) []byte {
+	return encodeInteger(numReplicas)
 }
