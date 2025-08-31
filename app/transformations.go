@@ -248,6 +248,11 @@ func encodeBulkArray(output []string) []byte {
 	return []byte(result)
 }
 
+func encodeInteger(num int) []byte {
+	result := fmt.Sprintf(":%d\r\n", num)
+	return []byte(result)
+}
+
 func encodeRDBFile(length int, content []byte) []byte {
 	result := append(fmt.Appendf(nil, "$%d\r\n", length), content...)
 	return result

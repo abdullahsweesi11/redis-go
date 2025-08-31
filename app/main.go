@@ -186,6 +186,15 @@ func main() {
 					replicaConns[&conn] = ""
 
 				}
+
+				if len(parsedArray) == 1 && parsedArray[0][0] == "WAIT" {
+					output := handleWait(parsedArray[0])
+					_, err := conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
+					}
+				}
 			}
 		}()
 	}

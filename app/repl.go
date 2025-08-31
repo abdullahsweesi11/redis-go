@@ -72,7 +72,7 @@ func handshakeMaster(host, port string) error {
 			if sliceEquals(arr, []string{"REPLCONF", "GETACK", "*"}) {
 				conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
 				receivedACk = true
-				err := incrementBytesProcessed(37)
+				bytesProcessed += 37
 				if err != nil {
 					fmt.Println("Problem: error thrown when incrementing bytes processed")
 					continue
@@ -100,9 +100,6 @@ func handshakeMaster(host, port string) error {
 			fmt.Println(string(readBuffer[:n]))
 			if receivedACk {
 				bytesProcessed += n
-			}
-			if err != nil {
-				fmt.Println("Problem: error thrown when incrementing bytes processed")
 			}
 
 			masterParsedArray, types, err := parseRESP(masterReadBuffer[:n])
@@ -151,19 +148,6 @@ func sendReplInfo() []byte {
 	)
 
 	return encodeBulkString(result)
-}
-
-func incrementBytesProcessed(increment int) error {
-	original := configRepl["numBytesProcessed"]
-	numBytesProcessed, err := strconv.Atoi(configRepl["numBytesProcessed"])
-	if err != nil {
-		return err
-	}
-
-	configRepl["numBytesProcessed"] = strconv.Itoa(numBytesProcessed + increment)
-
-	fmt.Printf("Incremented number of bytes processed from %s to %s\n", original, configRepl["numBytesProcessed"])
-	return nil
 }
 
 func randomAlphanumGenerator(length int) string {

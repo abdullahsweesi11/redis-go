@@ -118,3 +118,7 @@ func handleInfo(array []string) []byte {
 		return nullBulkString()
 	}
 }
+
+func handleWait(array []string) []byte {
+	return encodeInteger(0)
+}
