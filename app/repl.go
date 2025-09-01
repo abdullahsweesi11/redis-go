@@ -73,10 +73,6 @@ func handshakeMaster(host, port string) error {
 				conn.Write(encodeBulkArray([]string{"REPLCONF", "ACK", "0"}))
 				receivedACk = true
 				bytesProcessed += 37
-				if err != nil {
-					fmt.Println("Problem: error thrown when incrementing bytes processed")
-					continue
-				}
 			}
 		}
 	}
@@ -115,7 +111,7 @@ func handshakeMaster(host, port string) error {
 					if arr[0] == "SET" {
 						handleSet(arr) // no OK response back to master
 					} else if sliceEquals(arr, []string{"REPLCONF", "GETACK", "*"}) {
-						// don't count this REPLCONF command
+						// don't count this REPLCONF command as part of the bytes processed
 						if !receivedACk {
 							receivedACk = true
 						} else {

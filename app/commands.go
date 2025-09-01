@@ -122,3 +122,7 @@ func handleInfo(array []string) []byte {
 func handleWait(array []string, numReplicas int) []byte {
 	return encodeInteger(numReplicas)
 }
+
+func getAckBytes() []byte {
+	return encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
+}

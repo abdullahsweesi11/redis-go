@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,7 +54,10 @@ func main() {
 		configRepl["role"] = "master"
 	}
 
-	replicaConns := map[*net.Conn]string{}
+	replicaConnsBytes := map[*net.Conn]int{}
+	replicaConnsPerceivedBytes := map[*net.Conn]int{}
+	replicaConnsReceivedACK := map[*net.Conn]bool{}
+	numReplicas := 0
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -63,7 +67,15 @@ func main() {
 
 		go func() {
 			defer conn.Close()
-			defer delete(replicaConns, &conn)
+			defer delete(replicaConnsBytes, &conn)
+			defer delete(replicaConnsPerceivedBytes, &conn)
+			defer delete(replicaConnsReceivedACK, &conn)
+			defer func() {
+				if numReplicas > 0 {
+					numReplicas--
+				}
+			}()
+
 			readBuffer := make([]byte, 1024)
 
 			for {
@@ -99,12 +111,23 @@ func main() {
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "SET" {
-					for replica, _ := range replicaConns {
-						_, err := (*replica).Write(encodeBulkArray(parsedArray[0]))
-						if err != nil {
-							fmt.Println("Problem: error thrown when writing to replica")
-							continue
-						}
+					for replica := range replicaConnsBytes {
+						go func() {
+							SETCommand := encodeBulkArray(parsedArray[0])
+							_, err := (*replica).Write(SETCommand)
+							if err != nil {
+								fmt.Println("Problem: error thrown when writing to replica")
+								return
+							}
+
+							ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
+							_, err = (*replica).Write(ACKCommand)
+							if err != nil {
+								fmt.Println("Problem: error thrown when writing to replica")
+								return
+							}
+
+						}()
 					}
 					output := handleSet(parsedArray[0])
 					if configRepl["role"] == "master" {
@@ -183,12 +206,44 @@ func main() {
 						continue
 					}
 
-					replicaConns[&conn] = ""
+					replicaConnsBytes[&conn] = 0
+					replicaConnsPerceivedBytes[&conn] = 0
+					replicaConnsReceivedACK[&conn] = false
+					numReplicas += 1
+				}
 
+				if len(parsedArray) == 1 && len(parsedArray[0]) == 3 &&
+					parsedArray[0][0] == "REPLCONF" && parsedArray[0][1] == "ACK" {
+					replicaConnsPerceivedBytes[&conn], err = strconv.Atoi(parsedArray[0][2])
+					replicaConnsReceivedACK[&conn] = true
+					if err != nil {
+						fmt.Println("Problem: could not convert replica acknowledgement bytes to an integer")
+						return
+					}
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "WAIT" {
-					output := handleWait(parsedArray[0], len(replicaConns))
+					// set initial value of 0 for acknowledged replicas
+					// set initial time
+					// after the specified time in parsedArray[2], return the number of acknowledged replicas using AfterFunc
+					for replica := range replicaConnsBytes {
+						go func() {
+							replicaConnsReceivedACK[replica] = false
+							ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
+							_, err = (*replica).Write(ACKCommand)
+							if err != nil {
+								fmt.Println("Problem: error thrown when writing to replica")
+								return
+							}
+
+							// loop with a very short delay, checking if it has responded
+							// if deadline has elapsed, return
+							// if acknowledgement is received, increment, and if it equals the number of required acknowledgements, cancel the AfterFunc and send it yourself
+							// if not, return
+						}()
+					}
+
+					output := handleWait(parsedArray[0], len(replicaConnsBytes))
 					_, err := conn.Write(output)
 					if err != nil {
 						fmt.Println("Problem: error thrown when writing to client")
