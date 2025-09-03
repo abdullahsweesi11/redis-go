@@ -56,7 +56,6 @@ func main() {
 
 	replicaConnsBytes := map[*net.Conn]int{}
 	replicaConnsPerceivedBytes := map[*net.Conn]int{}
-	replicaConnsReceivedACK := map[*net.Conn]bool{}
 	numReplicas := 0
 	for {
 		conn, err := l.Accept()
@@ -69,7 +68,6 @@ func main() {
 			defer conn.Close()
 			defer delete(replicaConnsBytes, &conn)
 			defer delete(replicaConnsPerceivedBytes, &conn)
-			defer delete(replicaConnsReceivedACK, &conn)
 			defer func() {
 				if numReplicas > 0 {
 					numReplicas--
@@ -97,7 +95,8 @@ func main() {
 
 				parsedArray, _, err := parseRESP(readBuffer[:n])
 				if err != nil {
-
+					fmt.Println("Problem: error occurred while parsing RESP array from client")
+					continue
 				}
 				fmt.Println(parsedArray)
 
@@ -208,32 +207,93 @@ func main() {
 
 					replicaConnsBytes[&conn] = 0
 					replicaConnsPerceivedBytes[&conn] = 0
-					replicaConnsReceivedACK[&conn] = false
 					numReplicas += 1
 				}
 
 				if len(parsedArray) == 1 && len(parsedArray[0]) == 3 &&
 					parsedArray[0][0] == "REPLCONF" && parsedArray[0][1] == "ACK" {
 					replicaConnsPerceivedBytes[&conn], err = strconv.Atoi(parsedArray[0][2])
-					replicaConnsReceivedACK[&conn] = true
 					if err != nil {
 						fmt.Println("Problem: could not convert replica acknowledgement bytes to an integer")
 						return
 					}
 				}
 
-				if len(parsedArray) == 1 && parsedArray[0][0] == "WAIT" {
+				if len(parsedArray) == 1 && len(parsedArray[0]) == 3 && parsedArray[0][0] == "WAIT" {
 					// set initial value of 0 for acknowledged replicas
+					numOfAcknowledgingReplica := 0
+					target, err := strconv.Atoi(parsedArray[0][1])
+					if err != nil {
+						fmt.Println("Problem: could not convert target num of acknowledging replicas to an integer")
+						continue
+					}
+					duration, err := time.ParseDuration(fmt.Sprintf("%sms", parsedArray[0][2]))
+					if err != nil {
+						fmt.Println("Problem: could not transform wait deadline into time.Duration")
+						continue
+					}
+
 					// set initial time
+					initialTime := time.Now()
+
 					// after the specified time in parsedArray[2], return the number of acknowledged replicas using AfterFunc
+					waitTimerPtr := time.AfterFunc(duration, func() {
+						output := encodeInteger(numOfAcknowledgingReplica)
+						_, err := conn.Write(output)
+						if err != nil {
+							fmt.Println("Problem: error thrown when writing to client")
+						}
+					})
+
 					for replica := range replicaConnsBytes {
 						go func() {
-							replicaConnsReceivedACK[replica] = false
-							ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
-							_, err = (*replica).Write(ACKCommand)
-							if err != nil {
-								fmt.Println("Problem: error thrown when writing to replica")
-								return
+							// ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
+							// _, err = (*replica).Write(ACKCommand)
+							// if err != nil {
+							// 	fmt.Println("Problem: error thrown when writing to replica")
+							// 	return
+							// }
+
+							replicaReadBuffer := make([]byte, 1024)
+
+							for {
+								(*replica).SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+								replicaN, replicaErr := conn.Read(replicaReadBuffer)
+								if replicaErr != nil {
+									fmt.Println("Problem: error thrown when awaiting reading acknowledgement from replica")
+									continue
+								}
+
+								if initialTime.Add(duration).After(time.Now()) {
+									return
+								}
+
+								if replicaN == 0 {
+									continue
+								}
+
+								replicaParsedArray, _, err := parseRESP(readBuffer[:n])
+								if err != nil {
+									fmt.Println("Problem: error occurred while parsing RESP array from replica")
+									continue
+								}
+
+								if len(replicaParsedArray) == 1 && len(replicaParsedArray[0]) == 3 && replicaParsedArray[0][0] == "REPLCONF" {
+									numOfAcknowledgingReplica += 1
+									if numOfAcknowledgingReplica >= target {
+										if waitTimerPtr.Stop() {
+											output := encodeInteger(numOfAcknowledgingReplica)
+											_, err := conn.Write(output)
+											if err != nil {
+												fmt.Println("Problem: error thrown when writing to client")
+											}
+										} else {
+											return
+										}
+									}
+								} else {
+									fmt.Println("Problem: Unexpected response from replica")
+								}
 							}
 
 							// loop with a very short delay, checking if it has responded
@@ -243,12 +303,6 @@ func main() {
 						}()
 					}
 
-					output := handleWait(parsedArray[0], len(replicaConnsBytes))
-					_, err := conn.Write(output)
-					if err != nil {
-						fmt.Println("Problem: error thrown when writing to client")
-						continue
-					}
 				}
 			}
 		}()
