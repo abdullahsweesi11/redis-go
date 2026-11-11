@@ -203,7 +203,6 @@ func storeInMap(fileEncoding []byte, key, val string, expiryPtr *expiry) bool {
 	filePointer += n
 
 	if fmt.Sprintf("%02x", fileEncoding[filePointer]) != "fe" {
-		// TODO: address when database is empty (add a database section)
 		toBeInserted += "fe00fb01"
 
 		if expiryPtr == nil {
@@ -228,7 +227,6 @@ func storeInMap(fileEncoding []byte, key, val string, expiryPtr *expiry) bool {
 		}
 
 		toBeInserted += "00" + encodedKey + encodedValue
-
 	} else {
 		originalFilePointer := filePointer
 		if _, exists := getFromMap(fmt.Sprintf("%x", fileEncoding), key); exists {
@@ -405,11 +403,12 @@ func getFromMap(fileEncoding, key string) ([]byte, bool) {
 	}
 
 	expiryPtr, expiryPtrExists := expiries[key]
+	fmt.Println(expiries)
 	if expiryPtrExists && expiryPtr != nil && time.Now().Compare((*expiryPtr).Timestamp) > 0 {
 		return nullBulkString(), false
 	}
 
-	return encodeSimpleString(value), true
+	return encodeBulkString(value), true
 }
 
 type keyValuePair struct {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -9,7 +10,12 @@ import (
 const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+APsAAP+Z/8ky5l9PGw=="
 
 func readRDBFile() (*string, error) {
-	byteContent, err := os.ReadFile(configRDB["name"])
+	name, ok := config.GetRDBString("name")
+	if !ok {
+		return nil, errors.New("Could not find RDB file name in config")
+	}
+
+	byteContent, err := os.ReadFile(name)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +25,12 @@ func readRDBFile() (*string, error) {
 }
 
 func writeRDBFile(content []byte) (bool, error) {
-	file, openErr := os.Create(configRDB["name"])
+	name, ok := config.GetRDBString("name")
+	if !ok {
+		return false, errors.New("Could not find RDB file name in config")
+	}
+
+	file, openErr := os.Create(name)
 	if openErr != nil {
 		return false, openErr
 	}
@@ -28,8 +39,6 @@ func writeRDBFile(content []byte) (bool, error) {
 		return false, writeErr
 	}
 
-	// contents, _ := readRDBFile()
-	// fmt.Println(*contents)
 	return true, nil
 }
 

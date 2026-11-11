@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,7 +30,7 @@ func handleSet(array []string) []byte {
 	} else {
 		// handle expiry delay
 		var expiryPtr *expiry
-		if len(array) == 5 && array[3] == "px" {
+		if len(array) == 5 && strings.ToLower(array[3]) == "px" {
 			delay, err := strconv.Atoi(array[4])
 			if err != nil {
 				fmt.Println("Problem: error thrown in SET (1)")
@@ -76,8 +77,8 @@ func handleConfigGet(array []string) []byte {
 	}
 
 	key := array[2]
-	val, exists := configRDB[key]
-	if !exists {
+	val, ok := config.GetRDBString(key)
+	if !ok {
 		return nullBulkString()
 	}
 

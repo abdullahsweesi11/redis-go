@@ -19,8 +19,8 @@ func parseFlags() {
 
 	flag.Parse()
 
-	configRDB["dir"] = *dir
-	configRDB["dbfilename"] = *dbFilename
+	config.SetRDBString("dir", *dir)
+	config.SetRDBString("dbfilename", *dbFilename)
 
 	// Set RDB config data
 	if *dir == "" || *dbFilename == "" {
@@ -31,7 +31,7 @@ func parseFlags() {
 			os.Exit(1)
 		}
 		defer rDBFile.Close()
-		configRDB["name"] = rDBFile.Name()
+		config.SetRDBString("name", rDBFile.Name())
 
 		writeBuffer := getEmptyRDBFile()
 		_, err = rDBFile.Write(writeBuffer)
@@ -40,44 +40,46 @@ func parseFlags() {
 			os.Exit(1)
 		}
 	} else {
-		configRDB["name"] = path.Join(*dir, *dbFilename)
+		config.SetRDBString("name", path.Join(*dir, *dbFilename))
 	}
 
 	// Set replication config data
 	if *port == "" {
-		configRepl["port"] = "6379"
+		config.SetReplString("port", "6379")
 	} else {
-		configRepl["port"] = *port
+		config.SetReplString("port", *port)
 	}
-	configRepl["master"] = *master
+	config.SetReplString("master", *master)
 }
 
-func parseRESP(RESPContent []byte) ([][]string, []int, error) {
+func parseRESP(RESPContent []byte) ([][]string, []int, []int, error) {
 	// first parameter represents the decoded text
-	// second parameter represents the purpose of text each one is
+	// second parameter represents the number of bytes used
+	// third parameter represents the purpose of text each one is
 	//   (0 for RDB file contents, 1 for command, 2 for other)
 
 	contentLength := len(RESPContent)
 	results := [][]string{}
-	RESPTypes := []int{} // representing the type of each RESP segment (e.g. simple string, bulk string, bulk array)
-	purposes := []int{}  // representing the purpose of each text
+	consumed := []int{}
+	purposes := []int{} // representing the purpose of each text
 
 	i := 0
 	for i < contentLength-1 {
+		startIndex := i
+
 		RESPType, err := categoriseRESPType(string(RESPContent[i]))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		switch RESPType {
 		case 0:
 			j := i + 1
-			for j < len(RESPContent)-1 && RESPContent[j] != 13 && RESPContent[j+1] != 10 {
+			for j < len(RESPContent)-1 && !(RESPContent[j] == 13 && RESPContent[j+1] == 10) {
 				j++
 			}
 
 			results = append(results, []string{string(RESPContent[i+1 : j])})
-			RESPTypes = append(RESPTypes, 0)
 			purposes = append(purposes, 2)
 
 			i = j + 2
@@ -97,7 +99,6 @@ func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 			i += 3 + len(lengthStr)
 
 			results = append(results, []string{string(RESPContent[i : i+length])})
-			RESPTypes = append(RESPTypes, 1)
 			purposes = append(purposes, 0)
 
 			i += length
@@ -142,14 +143,15 @@ func parseRESP(RESPContent []byte) ([][]string, []int, error) {
 			}
 
 			results = append(results, result)
-			RESPTypes = append(RESPTypes, 2)
 			purposes = append(purposes, 1)
 		default:
-			return nil, nil, errors.New("first character is not a valid option")
+			return nil, nil, nil, errors.New("first character is not a valid option")
 		}
+
+		consumed = append(consumed, i-startIndex)
 	}
 
-	return results, purposes, nil
+	return results, consumed, purposes, nil
 }
 
 func categoriseRESPType(firstLetter string) (int, error) {
