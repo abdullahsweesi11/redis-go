@@ -100,6 +100,7 @@ func handshakeMaster(host, port string) error {
 				fmt.Println("Problem: error thrown when parsing RESP content from master")
 				continue
 			}
+			fmt.Println(masterParsedArray)
 
 			for i, arr := range masterParsedArray {
 				if strings.HasPrefix(arr[0], "FULLRESYNC") {
@@ -172,4 +173,27 @@ func randomAlphanumGenerator(length int) string {
 	}
 
 	return string(resultBytes)
+}
+
+func countAcknowledged() (int, error) {
+	count := 0
+
+	actualOffsetMutex.Lock()
+	perceivedOffsetMutex.Lock()
+	defer actualOffsetMutex.Unlock()
+	defer perceivedOffsetMutex.Unlock()
+
+	for conn, actualBytes := range replicaConnsBytes {
+		perceivedBytes, ok := replicaConnsPerceivedBytes[conn]
+		if !ok {
+			fmt.Println("Error: Couldn't get perceived bytes for replica")
+			continue
+		}
+
+		if perceivedBytes >= actualBytes {
+			count += 1
+		}
+	}
+
+	return count, nil
 }

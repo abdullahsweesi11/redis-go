@@ -17,6 +17,14 @@ type expiry struct {
 	Timestamp time.Time
 }
 
+var actualOffsetMutex sync.Mutex
+var replicaConnsBytes = make(map[net.Conn]int)
+
+var perceivedOffsetMutex sync.Mutex
+var replicaConnsPerceivedBytes = make(map[net.Conn]int)
+
+var ackChan = make(chan struct{}, 10)
+
 func main() {
 	fmt.Println("Logs from your program will appear here!")
 
@@ -45,7 +53,6 @@ func main() {
 
 	// If replica, connect to master instance
 	if master != "" {
-		fmt.Println("I'm a replica")
 		masterParts := strings.Split(master, " ")
 		err := handshakeMaster(masterParts[0], masterParts[1])
 		if err != nil {
@@ -57,17 +64,11 @@ func main() {
 		// config.SetReplInt("replicationOffset", 0)
 	} else {
 		// if master, set resynchronisation data
-		fmt.Println("I'm a master")
 		config.SetReplString("replicationID", randomAlphanumGenerator(40))
-		fmt.Println("set replication id")
 		config.SetReplInt("replicationOffset", 0)
-		fmt.Println("set replication offset")
 		config.SetReplString("role", "master")
 	}
 
-	replicaConnsBytes := map[*net.Conn]int{}
-	replicaConnsPerceivedBytes := map[*net.Conn]int{}
-	numReplicas := 0
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -76,13 +77,14 @@ func main() {
 		}
 
 		go func() {
-			defer conn.Close()
-			defer delete(replicaConnsBytes, &conn)
-			defer delete(replicaConnsPerceivedBytes, &conn)
 			defer func() {
-				if numReplicas > 0 {
-					numReplicas--
-				}
+				conn.Close()
+				actualOffsetMutex.Lock()
+				delete(replicaConnsBytes, conn)
+				actualOffsetMutex.Unlock()
+				perceivedOffsetMutex.Lock()
+				delete(replicaConnsPerceivedBytes, conn)
+				perceivedOffsetMutex.Unlock()
 			}()
 
 			readBuffer := make([]byte, 1024)
@@ -121,24 +123,32 @@ func main() {
 				}
 
 				if len(parsedArray) == 1 && parsedArray[0][0] == "SET" {
+					SETCommand := encodeBulkArray(parsedArray[0])
+
+					actualOffsetMutex.Lock()
+
 					for replica := range replicaConnsBytes {
-						go func(r *net.Conn) {
-							SETCommand := encodeBulkArray(parsedArray[0])
-							_, err := (*r).Write(SETCommand)
+						go func(r net.Conn) {
+							_, err := r.Write(SETCommand)
 							if err != nil {
 								fmt.Println("Problem: error thrown when writing to replica")
 								return
 							}
 
-							// ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
-							// _, err = (*r).Write(ACKCommand)
-							// if err != nil {
-							// 	fmt.Println("Problem: error thrown when writing to replica")
-							// 	return
-							// }
-
 						}(replica)
+						replicaConnsBytes[replica] += len(SETCommand)
 					}
+
+					actualOffsetMutex.Unlock()
+
+					replicationOffset, ok := config.GetReplInt("replicationOffset")
+					if !ok {
+						fmt.Println("Problem: could not get role info")
+						continue
+					}
+
+					config.SetReplInt("replicationOffset", replicationOffset+len(SETCommand))
+
 					output := handleSet(parsedArray[0])
 
 					role, ok := config.GetReplString("role")
@@ -192,12 +202,28 @@ func main() {
 					}
 				}
 
-				if len(parsedArray) == 1 && parsedArray[0][0] == "REPLCONF" {
-					output := encodeSimpleString("OK")
-					_, err := conn.Write(output)
-					if err != nil {
-						fmt.Println("Problem: error thrown when writing to client")
-						continue
+				if len(parsedArray) == 1 && len(parsedArray[0]) >= 2 && parsedArray[0][0] == "REPLCONF" {
+					if parsedArray[0][1] == "ACK" && len(parsedArray[0]) == 3 {
+						var perceivedBytes int
+						perceivedBytes, err = strconv.Atoi(parsedArray[0][2])
+						if err != nil {
+							fmt.Println("Problem: could not convert replica acknowledgement bytes to an integer")
+						}
+						perceivedOffsetMutex.Lock()
+						replicaConnsPerceivedBytes[conn] = perceivedBytes
+						perceivedOffsetMutex.Unlock()
+
+						select {
+						case ackChan <- struct{}{}:
+						default:
+						}
+					} else {
+						output := encodeSimpleString("OK")
+						_, err := conn.Write(output)
+						if err != nil {
+							fmt.Println("Problem: error thrown when writing to client")
+							continue
+						}
 					}
 				}
 
@@ -234,27 +260,23 @@ func main() {
 						continue
 					}
 
-					replicaConnsBytes[&conn] = 0
-					replicaConnsPerceivedBytes[&conn] = 0
-					numReplicas += 1
-				}
+					actualOffsetMutex.Lock()
+					perceivedOffsetMutex.Lock()
 
-				if len(parsedArray) == 1 && len(parsedArray[0]) == 3 &&
-					parsedArray[0][0] == "REPLCONF" && parsedArray[0][1] == "ACK" {
-					replicaConnsPerceivedBytes[&conn], err = strconv.Atoi(parsedArray[0][2])
-					if err != nil {
-						fmt.Println("Problem: could not convert replica acknowledgement bytes to an integer")
-						return
-					}
+					replicaConnsBytes[conn] = 0
+					replicaConnsPerceivedBytes[conn] = 0
+
+					actualOffsetMutex.Unlock()
+					perceivedOffsetMutex.Unlock()
 				}
 
 				if len(parsedArray) == 1 && len(parsedArray[0]) == 3 && parsedArray[0][0] == "WAIT" {
-					answerSent := false
-					var acknowledgementsMutex sync.Mutex
-					var sentMutex sync.Mutex
+					// answerSent := false
+					// var acknowledgementsMutex sync.Mutex
+					// var sentMutex sync.Mutex
 
-					// set initial value of 0 for number of acknowledged replicas
-					acknowledgements := 0
+					// // set initial value of 0 for number of acknowledged replicas
+					// acknowledgements := 0
 
 					target, err := strconv.Atoi(parsedArray[0][1])
 					if err != nil {
@@ -269,7 +291,7 @@ func main() {
 						if err != nil {
 							fmt.Println("Problem: error thrown when writing to client")
 						}
-						return
+						continue
 					}
 
 					// WAIT with no commands
@@ -278,14 +300,16 @@ func main() {
 						fmt.Println("Problem: could not get replication offset")
 						continue
 					}
-
 					if replicationOffset == 0 {
-						output := encodeInteger(numReplicas)
+						actualOffsetMutex.Lock()
+						output := encodeInteger(len(replicaConnsBytes))
+						actualOffsetMutex.Unlock()
+
 						_, err := conn.Write(output)
 						if err != nil {
 							fmt.Println("Problem: error thrown when writing to client")
 						}
-						return
+						continue
 					}
 
 					duration, err := time.ParseDuration(fmt.Sprintf("%sms", parsedArray[0][2]))
@@ -293,84 +317,53 @@ func main() {
 						fmt.Println("Problem: could not transform wait deadline into time.Duration")
 						continue
 					}
-					fmt.Println("HELLO")
 
-					// after the specified time in parsedArray[2], return the number of acknowledged replicas using AfterFunc
-					timerPtr := time.AfterFunc(duration, func() {
-						fmt.Println("WAIT TIMER FIRED")
-						sentMutex.Lock()
-						if answerSent {
-							sentMutex.Unlock()
-							return
-						}
-						answerSent = true
-						sentMutex.Unlock()
-
-						acknowledgementsMutex.Lock()
-						currentAcknowledgements := acknowledgements
-						acknowledgementsMutex.Unlock()
-
-						output := encodeInteger(currentAcknowledgements)
-						_, err := conn.Write(output)
-						if err != nil {
-							fmt.Println("Problem: error thrown when writing to client")
-						}
-					})
-
+					// Send GETACK to all replicas
+					actualOffsetMutex.Lock()
+					ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
 					for replica := range replicaConnsBytes {
-						go func(r *net.Conn) {
-							ACKCommand := encodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
-							_, replicaErr := (*r).Write(ACKCommand)
+						go func(r net.Conn) {
+							_, replicaErr := r.Write(ACKCommand)
 							if replicaErr != nil {
 								fmt.Println("Problem: error thrown when writing to replica")
 								return
 							}
-
-							replicaReadBuffer := make([]byte, 1024)
-
-							for {
-								replicaN, replicaErr := (*r).Read(replicaReadBuffer)
-								if replicaErr != nil {
-									fmt.Println("Problem: error thrown when awaiting reading acknowledgement from replica")
-									break
-								}
-
-								if replicaN == 0 {
-									continue
-								}
-
-								replicaParsedArray, _, _, replicaErr := parseRESP(replicaReadBuffer[:replicaN])
-								if replicaErr != nil {
-									fmt.Println("Problem: error occurred while parsing RESP array from replica")
-									continue
-								}
-
-								if len(replicaParsedArray) == 1 && len(replicaParsedArray[0]) == 3 && replicaParsedArray[0][0] == "REPLCONF" {
-									acknowledgementsMutex.Lock()
-									sentMutex.Lock()
-									acknowledgements += 1
-									if acknowledgements >= target {
-										if !answerSent {
-											timerPtr.Stop()
-											answerSent = true
-											output := encodeInteger(acknowledgements)
-											_, replicaErr := conn.Write(output)
-											if replicaErr != nil {
-												fmt.Println("Problem: error thrown when writing to client")
-											}
-										}
-										sentMutex.Unlock()
-										acknowledgementsMutex.Unlock()
-										break
-									}
-									sentMutex.Unlock()
-									acknowledgementsMutex.Unlock()
-
-								} else {
-									fmt.Println("Problem: Unexpected response from replica")
-								}
-							}
 						}(replica)
+					}
+					actualOffsetMutex.Unlock()
+
+					timeout := time.After(duration)
+					for {
+						acknowledged, err := countAcknowledged()
+						if err != nil {
+							fmt.Println("Error occurred when counting acknowledgements")
+						}
+
+						if acknowledged >= target {
+							break
+						}
+
+						timedOut := false
+						select {
+						case <-ackChan:
+						case <-timeout:
+							timedOut = true
+						}
+
+						if timedOut {
+							break
+						}
+					}
+
+					acknowledged, err := countAcknowledged()
+					if err != nil {
+						fmt.Println("Error occurred when counting acknowledgements")
+					}
+
+					output := encodeInteger(acknowledged)
+					_, replicaErr := conn.Write(output)
+					if replicaErr != nil {
+						fmt.Println("Problem: error thrown when writing to client")
 					}
 
 				}
