@@ -44,17 +44,10 @@ func main() {
 
 	// migrate existing data from disk
 
-	rdbContents, err := readRDBFile()
-
-	if err != nil {
-		fmt.Println(err)
-		fmt.Println("Problem: error thrown when reading RDB file")
-	}
-
-	err = extractFromDisk(rdbContents)
-
-	if err != nil {
-		fmt.Println("Problem: error thrown while migrating disk data")
+	if rdbContents, err := readRDBFile(); err == nil {
+		if err = extractFromDisk(rdbContents); err != nil {
+			fmt.Println("Problem: error thrown while migrating disk data:", err)
+		}
 	}
 
 	// Replication set-up

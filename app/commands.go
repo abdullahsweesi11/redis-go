@@ -52,11 +52,15 @@ func handleType(array []string) []byte {
 
 	key := array[1]
 
+	storeMutex.Lock()
+
 	_, ok := store[key]
 	if !ok {
 		fmt.Println("Problem: entry does not exist in map")
 		return encodeSimpleString("none")
 	}
+
+	storeMutex.Unlock()
 
 	keyType := "string"
 
@@ -80,6 +84,10 @@ func handleGet(array []string) []byte {
 	}
 
 	if entry.ExpiresAt != nil && time.Now().Compare(*entry.ExpiresAt) > 0 {
+		storeMutex.Lock()
+		delete(store, key)
+		storeMutex.Unlock()
+
 		return nullBulkString()
 	}
 
