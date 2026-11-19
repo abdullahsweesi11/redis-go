@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +10,7 @@ import (
 func handleEcho(array []string) []byte {
 	if len(array) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for ECHO")
-		os.Exit(1)
+		return nullBulkString()
 	}
 
 	return encodeBulkString(array[1])
@@ -20,60 +18,78 @@ func handleEcho(array []string) []byte {
 
 func handleSet(array []string) []byte {
 	if len(array) != 3 && len(array) != 5 {
-		fmt.Println("Problem: too many arguments passed for SET")
-		os.Exit(1)
+		fmt.Println("Problem: invalid number of arguments passed to SET")
+		return nullBulkString()
 	}
 
-	rdbContents, err := readRDBFile()
-	if err != nil {
-		fmt.Println("Problem: error thrown when reading RDB file")
-	} else {
-		// handle expiry delay
-		var expiryPtr *expiry
-		if len(array) == 5 && strings.ToLower(array[3]) == "px" {
-			delay, err := strconv.Atoi(array[4])
-			if err != nil {
-				fmt.Println("Problem: error thrown in SET (1)")
-				os.Exit(1)
-			}
-			expiryPtr = &expiry{time.UnixMilli(time.Now().UnixMilli() + int64(delay))}
+	// handle expiry delay
+	var expiresAt *time.Time
+	if len(array) == 5 && strings.ToLower(array[3]) == "px" {
+		delay, err := strconv.Atoi(array[4])
+		if err != nil {
+			fmt.Println("Problem: error thrown while decoding expiration")
+			return nullBulkString()
 		}
-
-		// store key-value pair into RDB file
-		rdbContentsBytes, decodingErr := hex.DecodeString(*rdbContents)
-		if decodingErr != nil {
-			fmt.Println("Problem: error thrown when converting from hex to byte array")
-		}
-		if storeInMap(rdbContentsBytes, array[1], array[2], expiryPtr) {
-			return encodeSimpleString("OK")
-		}
+		t := time.UnixMilli(time.Now().UnixMilli() + int64(delay))
+		expiresAt = &t
 	}
 
-	return nullBulkString()
+	key := array[1]
+	val := array[2]
+
+	storeMutex.Lock()
+	store[key] = Entry{val, expiresAt}
+	storeMutex.Unlock()
+
+	return encodeSimpleString("OK")
+}
+
+func handleType(array []string) []byte {
+	if len(array) != 2 {
+		fmt.Println("Problem: invalid number of arguments passed to TYPE")
+		return encodeSimpleString("")
+	}
+
+	key := array[1]
+
+	_, ok := store[key]
+	if !ok {
+		fmt.Println("Problem: entry does not exist in map")
+		return encodeSimpleString("none")
+	}
+
+	keyType := "string"
+
+	return encodeSimpleString(keyType)
 }
 
 func handleGet(array []string) []byte {
 	if len(array) != 2 {
-		fmt.Println("Problem: more than 1 argument passed for GET")
-		os.Exit(1)
+		fmt.Println("Problem: invalid number of arguments passed to GET")
+		return nullBulkString()
 	}
 
-	rdbContents, err := readRDBFile()
+	key := array[1]
 
-	if err != nil {
-		fmt.Println("Warning: error thrown when reading RDB file")
-	} else {
-		val, _ := getFromMap(*rdbContents, array[1])
-		return val
+	storeMutex.Lock()
+	entry, ok := store[key]
+	storeMutex.Unlock()
+
+	if !ok {
+		return nullBulkString()
 	}
 
-	return nullBulkString()
+	if entry.ExpiresAt != nil && time.Now().Compare(*entry.ExpiresAt) > 0 {
+		return nullBulkString()
+	}
+
+	return encodeBulkString(entry.Value)
 }
 
 func handleConfigGet(array []string) []byte {
 	if len(array) != 3 {
-		fmt.Println("Problem: more than 1 argument passed for CONFIG GET")
-		os.Exit(1)
+		fmt.Println("Problem: invalid number of arguments passed to CONFIG GET")
+		return nullBulkString()
 	}
 
 	key := array[2]
@@ -89,24 +105,21 @@ func handleKeys(array []string) []byte {
 	// assuming array[1] is always "*"
 
 	if len(array) != 2 {
-		fmt.Println("Problem: more than 1 argument passed for KEYS")
-		os.Exit(1)
+		fmt.Println("Problem: invalid number of arguments passed to KEYS")
+		return nullBulkString()
 	}
 
-	rdbContents, err := readRDBFile()
-	if err != nil {
-		fmt.Println("Problem: error thrown when reading RDB file")
-		os.Exit(1)
-	}
+	storeMutex.Lock()
 
-	hashmap, _ := extractMap(*rdbContents)
-	keys := make([]string, len(hashmap))
+	keys := make([]string, len(store))
 	i := 0
 
-	for key := range hashmap {
+	for key := range store {
 		keys[i] = key
 		i++
 	}
+
+	storeMutex.Unlock()
 
 	return encodeBulkArray(keys)
 }

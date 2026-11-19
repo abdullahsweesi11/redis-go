@@ -13,10 +13,6 @@ import (
 
 var config = NewConfig()
 
-type expiry struct {
-	Timestamp time.Time
-}
-
 var actualOffsetMutex sync.Mutex
 var replicaConnsBytes = make(map[net.Conn]int)
 
@@ -31,6 +27,7 @@ func main() {
 	// store any CLI flags
 	parseFlags()
 
+	// set up server to listen
 	port, ok := config.GetReplString("port")
 	if !ok {
 		fmt.Println("Could not get port info")
@@ -44,6 +41,23 @@ func main() {
 	}
 
 	defer l.Close()
+
+	// migrate existing data from disk
+
+	rdbContents, err := readRDBFile()
+
+	if err != nil {
+		fmt.Println(err)
+		fmt.Println("Problem: error thrown when reading RDB file")
+	}
+
+	err = extractFromDisk(rdbContents)
+
+	if err != nil {
+		fmt.Println("Problem: error thrown while migrating disk data")
+	}
+
+	// Replication set-up
 
 	master, ok := config.GetReplString("master")
 	if !ok {
@@ -92,8 +106,6 @@ func main() {
 			for {
 				n, err := conn.Read(readBuffer)
 				if err != nil {
-					// fmt.Println(err)
-					// fmt.Println("Problem: error thrown when reading from client")
 					continue
 				}
 
@@ -163,6 +175,16 @@ func main() {
 							fmt.Println("Problem: error thrown when writing to client")
 							continue
 						}
+					}
+				}
+
+				if len(parsedArray) == 1 && parsedArray[0][0] == "TYPE" {
+					output := handleType(parsedArray[0])
+
+					_, err = conn.Write(output)
+					if err != nil {
+						fmt.Println("Problem: error thrown when writing to client")
+						continue
 					}
 				}
 

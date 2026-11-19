@@ -9,19 +9,19 @@ import (
 
 const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+APsAAP+Z/8ky5l9PGw=="
 
-func readRDBFile() (*string, error) {
+func readRDBFile() (string, error) {
 	name, ok := config.GetRDBString("name")
 	if !ok {
-		return nil, errors.New("Could not find RDB file name in config")
+		return "", errors.New("Could not find RDB file name in config")
 	}
 
 	byteContent, err := os.ReadFile(name)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	rdbContent := fmt.Sprintf("%x", byteContent)
-	return &rdbContent, nil
+	return rdbContent, nil
 }
 
 func writeRDBFile(content []byte) (bool, error) {
