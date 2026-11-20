@@ -46,24 +46,35 @@ func AppendToStream(key string, entry StreamEntry) error {
 	return nil
 }
 
-func ParseStreamEntryID(entryID string) (uint64, uint64, error) {
-	result := strings.Split(entryID, "-")
-	if len(result) != 2 {
+func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (uint64, uint64, error) {
+	elems := strings.Split(entryID, "-")
+	if len(elems) != 2 {
 		fmt.Println("Problem: Invalid format for entry ID")
 		return 0, 0, errors.New("Invalid format for entry ID")
 	}
 
-	milliseconds, err := strconv.ParseUint(result[0], 10, 64)
+	milliseconds, err := strconv.ParseUint(elems[0], 10, 64)
 	if err != nil {
 		fmt.Println("Problem: Could not parse milliseconds")
 		return 0, 0, errors.New("Internal server error [parsing milliseconds]")
 	}
 
-	sequence, err := strconv.ParseUint(result[1], 10, 64)
-	if err != nil {
-		fmt.Println("Problem: Could not parse sequence")
-		return 0, 0, errors.New("Internal server error [parsing sequence]")
+	var sequence uint64
+	if elems[1] == "*" {
+		if milliseconds == 0 {
+			sequence = 1
+		} else if lastEntry == nil || lastEntry.ID.Milliseconds != milliseconds {
+			sequence = 0
+		} else {
+			sequence = lastEntry.ID.Sequence + 1
+		}
+	} else {
+		sequence, err = strconv.ParseUint(elems[1], 10, 64)
+		if err != nil {
+			fmt.Println("Problem: Could not parse sequence")
+			return 0, 0, errors.New("Internal server error [parsing sequence]")
+		}
 	}
-
+	fmt.Println(milliseconds, sequence)
 	return milliseconds, sequence, nil
 }
