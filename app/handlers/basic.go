@@ -1,4 +1,4 @@
-package server
+package handlers
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
 )
 
-func handlePing(conn net.Conn, cmd []string) []byte {
+func HandlePing(conn net.Conn, cmd []string) []byte {
 	for _, msg := range cmd {
 		if msg == "PING" {
 			_, err := conn.Write(utils.EncodeSimpleString("PONG"))
@@ -22,7 +22,7 @@ func handlePing(conn net.Conn, cmd []string) []byte {
 	return nil
 }
 
-func handleEcho(cmd []string) []byte {
+func HandleEcho(cmd []string) []byte {
 	if len(cmd) != 2 {
 		fmt.Println("Problem: more than 1 argument passed for ECHO")
 		return utils.NullBulkString()
@@ -68,7 +68,7 @@ func HandleSet(cmd []string) []byte {
 	return nil
 }
 
-func handleType(cmd []string) []byte {
+func HandleType(cmd []string) []byte {
 	if len(cmd) != 2 {
 		fmt.Println("Problem: invalid number of arguments passed to TYPE")
 		return utils.EncodeSimpleString("")
@@ -79,7 +79,7 @@ func handleType(cmd []string) []byte {
 	return utils.EncodeSimpleString(store.StoreType(key))
 }
 
-func handleGet(cmd []string) []byte {
+func HandleGet(cmd []string) []byte {
 	if len(cmd) != 2 {
 		fmt.Println("Problem: invalid number of arguments passed to GET")
 		return utils.NullBulkString()
@@ -95,7 +95,7 @@ func handleGet(cmd []string) []byte {
 	return utils.EncodeBulkString(val)
 }
 
-func handleConfigGet(cmd []string) []byte {
+func HandleConfigGet(cmd []string) []byte {
 	if len(cmd) != 3 {
 		fmt.Println("Problem: invalid number of arguments passed to CONFIG GET")
 		return utils.NullBulkString()
@@ -110,7 +110,7 @@ func handleConfigGet(cmd []string) []byte {
 	return utils.EncodeBulkArray([]string{key, val})
 }
 
-func handleKeys(cmd []string) []byte {
+func HandleKeys(cmd []string) []byte {
 	// assumes cmd[1] is always "*"
 
 	if len(cmd) != 2 {
@@ -121,7 +121,7 @@ func handleKeys(cmd []string) []byte {
 	return utils.EncodeBulkArray(store.StoreKeys())
 }
 
-func handleInfo(cmd []string) []byte {
+func HandleInfo(cmd []string) []byte {
 	switch cmd[1] {
 	case "replication":
 		return repl.GetReplInfo()
@@ -130,10 +130,6 @@ func handleInfo(cmd []string) []byte {
 	}
 }
 
-func handleWait(cmd []string, numReplicas int) []byte {
-	return utils.EncodeInteger(numReplicas)
-}
-
-func getAckBytes() []byte {
+func GetAckBytes() []byte {
 	return utils.EncodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
 }

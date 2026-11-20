@@ -1,4 +1,4 @@
-package repl
+package handlers
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/app/db"
+	"github.com/codecrafters-io/redis-starter-go/app/repl"
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
 )
 
@@ -18,10 +19,10 @@ func HandleReplconf(conn net.Conn, cmd []string) []byte {
 			fmt.Println("Problem: could not convert replica acknowledgement bytes to an integer")
 		}
 
-		UpdateLocalOffset(conn, localOffset)
+		repl.UpdateLocalOffset(conn, localOffset)
 
 		select {
-		case ReplStatus.AckChan <- struct{}{}:
+		case repl.ReplStatus.AckChan <- struct{}{}:
 		default:
 		}
 	} else {
@@ -35,11 +36,11 @@ func HandlePsync(conn net.Conn, cmd []string) []byte {
 	// (FULLRESYNC and the empty RDB file)
 	// that need to be sent one after the other
 
-	replicationID, ok := ReplStatus.Config.GetString("replicationID")
+	replicationID, ok := repl.ReplStatus.Config.GetString("replicationID")
 	if !ok {
 		fmt.Println("Problem: could not get replication ID")
 	}
-	replicationOffset, ok := ReplStatus.Config.GetInt("replicationOffset")
+	replicationOffset, ok := repl.ReplStatus.Config.GetInt("replicationOffset")
 	if !ok {
 		fmt.Println("Problem: could not get replication offset")
 	}
@@ -63,7 +64,7 @@ func HandlePsync(conn net.Conn, cmd []string) []byte {
 		fmt.Println("Problem: error thrown when writing to client")
 	}
 
-	RegisterReplica(conn)
+	repl.RegisterReplica(conn)
 
 	return nil
 }
@@ -82,13 +83,13 @@ func HandleWait(conn net.Conn, cmd []string) []byte {
 	}
 
 	// WAIT with no commands
-	replicationOffset, ok := ReplStatus.Config.GetInt("replicationOffset")
+	replicationOffset, ok := repl.ReplStatus.Config.GetInt("replicationOffset")
 	if !ok {
 		fmt.Println("Problem: could not get replication offset")
 		return utils.EncodeSimpleError("Internal server error")
 	}
 	if replicationOffset == 0 {
-		return GetNumberOfReplicas()
+		return repl.GetNumberOfReplicas()
 	}
 
 	duration, err := time.ParseDuration(fmt.Sprintf("%sms", cmd[2]))
@@ -99,11 +100,11 @@ func HandleWait(conn net.Conn, cmd []string) []byte {
 
 	// Send GETACK to all replicas
 	ACKCommand := utils.EncodeBulkArray([]string{"REPLCONF", "GETACK", "*"})
-	PropagateToReplicas(ACKCommand, false)
+	repl.PropagateToReplicas(ACKCommand, false)
 
 	timeout := time.After(duration)
 	for {
-		acknowledged, err := countAcknowledged()
+		acknowledged, err := repl.CountAcknowledged()
 		if err != nil {
 			fmt.Println("Error occurred when counting acknowledgements")
 		}
@@ -114,7 +115,7 @@ func HandleWait(conn net.Conn, cmd []string) []byte {
 
 		timedOut := false
 		select {
-		case <-ReplStatus.AckChan:
+		case <-repl.ReplStatus.AckChan:
 		case <-timeout:
 			timedOut = true
 		}
@@ -124,7 +125,7 @@ func HandleWait(conn net.Conn, cmd []string) []byte {
 		}
 	}
 
-	acknowledged, err := countAcknowledged()
+	acknowledged, err := repl.CountAcknowledged()
 	if err != nil {
 		fmt.Println("Error occurred when counting acknowledgements")
 	}

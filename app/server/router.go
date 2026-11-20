@@ -4,38 +4,42 @@ import (
 	"net"
 	"strings"
 
-	"github.com/codecrafters-io/redis-starter-go/app/repl"
+	"github.com/codecrafters-io/redis-starter-go/app/handlers"
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
 )
 
 func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	switch strings.ToUpper(cmd[0]) {
 	case "PING":
-		return handlePing(conn, cmd)
+		return handlers.HandlePing(conn, cmd)
 	case "ECHO":
-		return handleEcho(cmd)
+		return handlers.HandleEcho(cmd)
 	case "GET":
-		return handleGet(cmd)
+		return handlers.HandleGet(cmd)
 	case "SET":
-		return HandleSet(cmd)
+		return handlers.HandleSet(cmd)
 	case "TYPE":
-		return handleType(cmd)
+		return handlers.HandleType(cmd)
 	case "CONFIG":
 		if len(cmd) > 1 && cmd[1] == "GET" {
-			return handleConfigGet(cmd)
+			return handlers.HandleConfigGet(cmd)
 		}
 		return utils.NullBulkString()
 	case "INFO":
-		return handleInfo(cmd)
+		return handlers.HandleInfo(cmd)
 	case "KEYS":
-		return handleKeys(cmd)
+		return handlers.HandleKeys(cmd)
+	// Replication handlers
 	case "REPLCONF":
-		return repl.HandleReplconf(conn, cmd)
+		return handlers.HandleReplconf(conn, cmd)
 	case "PSYNC":
 		// handles sending messages itself (returns nil)
-		return repl.HandlePsync(conn, cmd)
+		return handlers.HandlePsync(conn, cmd)
 	case "WAIT":
-		return repl.HandleWait(conn, cmd)
+		return handlers.HandleWait(conn, cmd)
+	// Stream handlers
+	case "XADD":
+		return handlers.HandleXADD(cmd)
 	default:
 		return utils.NullBulkString()
 	}

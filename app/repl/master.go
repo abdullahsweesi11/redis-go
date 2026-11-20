@@ -73,7 +73,7 @@ func IncrementOffset(cmd []byte) error {
 	return nil
 }
 
-func countAcknowledged() (int, error) {
+func CountAcknowledged() (int, error) {
 	count := 0
 
 	ReplStatus.GlobalOffsetsMutex.Lock()

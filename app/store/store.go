@@ -10,7 +10,7 @@ import (
 )
 
 type Entry struct {
-	Value     string
+	Value     any
 	Type      string
 	ExpiresAt *time.Time
 }
@@ -41,7 +41,7 @@ func StoreSetFromCommand(cmd []string) error {
 	return nil
 }
 
-func StoreSet(key, val, _type string, expiresAt *time.Time) {
+func StoreSet(key string, val any, _type string, expiresAt *time.Time) {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
 	store[key] = Entry{val, _type, expiresAt}
@@ -65,7 +65,7 @@ func StoreGet(key string) (string, bool) {
 		delete(store, key)
 		return "", false
 	}
-	return entry.Value, true
+	return entry.Value.(string), true
 }
 
 func StoreType(key string) string {
@@ -77,9 +77,10 @@ func StoreType(key string) string {
 		return "none"
 	}
 	if entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt) {
+		delete(store, key)
 		return "none"
 	}
-	return "string"
+	return entry.Type
 }
 
 func StoreKeys() []string {
