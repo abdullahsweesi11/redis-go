@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"encoding/base64"
@@ -9,8 +9,8 @@ import (
 
 const EMPTY_RDB_BASE64 = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+APsAAP+Z/8ky5l9PGw=="
 
-func readRDBFile() (string, error) {
-	name, ok := config.GetRDBString("name")
+func ReadRDBFile() (string, error) {
+	name, ok := RDBConfig.GetString("name")
 	if !ok {
 		return "", errors.New("Could not find RDB file name in config")
 	}
@@ -24,8 +24,8 @@ func readRDBFile() (string, error) {
 	return rdbContent, nil
 }
 
-func writeRDBFile(content []byte) (bool, error) {
-	name, ok := config.GetRDBString("name")
+func WriteRDBFile(content []byte) (bool, error) {
+	name, ok := RDBConfig.GetString("name")
 	if !ok {
 		return false, errors.New("Could not find RDB file name in config")
 	}
@@ -42,7 +42,7 @@ func writeRDBFile(content []byte) (bool, error) {
 	return true, nil
 }
 
-func getEmptyRDBFile() []byte {
+func GetEmptyRDBFile() []byte {
 	emptyRDB, err := base64.StdEncoding.DecodeString(EMPTY_RDB_BASE64)
 	if err != nil {
 		fmt.Println("Problem: could not extract empty RDB binary")

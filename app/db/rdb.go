@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"bytes"
@@ -11,17 +11,11 @@ import (
 
 	// "os"
 	"strconv"
-	"sync"
 	"time"
+
+	"github.com/codecrafters-io/redis-starter-go/app/store"
+	"github.com/codecrafters-io/redis-starter-go/app/utils"
 )
-
-type Entry struct {
-	Value     string
-	ExpiresAt *time.Time
-}
-
-var storeMutex sync.Mutex
-var store = make(map[string]Entry)
 
 type LengthEncodingType int
 
@@ -97,7 +91,7 @@ func encodeLength(length int) (string, error) {
 		}
 		return fmt.Sprintf("%04x", decimalLength), nil
 	} else if uint64(length) < (1 << 32) {
-		binaryLength, binaryErr := toggleEndianBinary(fmt.Sprintf("%032b", length))
+		binaryLength, binaryErr := utils.ToggleEndianBinary(fmt.Sprintf("%032b", length))
 		if binaryErr != nil {
 			return "", errors.New("could not convert from big-endian to little-endian")
 		}
@@ -414,7 +408,7 @@ func getChecksum(payload []byte) []byte {
 	return newChecksumBytes
 }
 
-func extractFromDisk(fileEncoding string) error {
+func ExtractFromDisk(fileEncoding string) error {
 	dataLength := len(fileEncoding)
 
 	for i := 0; i < dataLength; i += 2 {
@@ -464,7 +458,7 @@ func parsePairs(pairs string) error {
 			return errors.New("Could not find start of key-value pair")
 		}
 		var key string
-		var storeEntry Entry
+		var storeEntry store.Entry
 
 		switch pairs[i : i+2] {
 		case "fc":
@@ -476,7 +470,7 @@ func parsePairs(pairs string) error {
 			}
 
 			// switch from little-endian hex to big-endian hex
-			timestampHex, convertErr := toggleEndianHex(pairs[i : i+16])
+			timestampHex, convertErr := utils.ToggleEndianHex(pairs[i : i+16])
 			if convertErr != nil {
 				fmt.Printf("Problem: error thrown while converting timestamp to big endian")
 				return errors.New("Error thrown while converting timestamp to big endian")
@@ -533,9 +527,7 @@ func parsePairs(pairs string) error {
 			i += 2 * entityLength
 		}
 
-		storeMutex.Lock()
-		store[key] = storeEntry
-		storeMutex.Unlock()
+		store.StoreSetEntry(key, storeEntry)
 	}
 
 	return nil

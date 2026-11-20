@@ -1,58 +1,16 @@
-package main
+package utils
 
 import (
 	"errors"
-	"flag"
 	"fmt"
+	"math/rand"
 	"os"
-	"path"
 	"reflect"
 	"strconv"
 	"unicode"
 )
 
-func parseFlags() {
-	dir := flag.String("dir", "", "Path to RDB file directory")
-	dbFilename := flag.String("dbfilename", "", "RDB file name")
-	port := flag.String("port", "", "Redis server port")
-	master := flag.String("replicaof", "", "Master host and port")
-
-	flag.Parse()
-
-	config.SetRDBString("dir", *dir)
-	config.SetRDBString("dbfilename", *dbFilename)
-
-	// Set RDB config data
-	if *dir == "" || *dbFilename == "" {
-		// should choose a different home, since it isn't a temporary file
-		rDBFile, err := os.Create("/tmp/dump.rdb")
-		if err != nil {
-			fmt.Println("Problem: could not create an RDB file")
-			os.Exit(1)
-		}
-		defer rDBFile.Close()
-		config.SetRDBString("name", rDBFile.Name())
-
-		writeBuffer := getEmptyRDBFile()
-		_, err = rDBFile.Write(writeBuffer)
-		if err != nil {
-			fmt.Println("Problem: could not initialise an empty RDB file")
-			os.Exit(1)
-		}
-	} else {
-		config.SetRDBString("name", path.Join(*dir, *dbFilename))
-	}
-
-	// Set replication config data
-	if *port == "" {
-		config.SetReplString("port", "6379")
-	} else {
-		config.SetReplString("port", *port)
-	}
-	config.SetReplString("master", *master)
-}
-
-func parseRESP(RESPContent []byte) ([][]string, []int, []int, error) {
+func ParseRESP(RESPContent []byte) ([][]string, []int, []int, error) {
 	// first parameter represents the decoded text
 	// second parameter represents the number of bytes used
 	// third parameter represents the purpose of text each one is
@@ -67,7 +25,7 @@ func parseRESP(RESPContent []byte) ([][]string, []int, []int, error) {
 	for i < contentLength-1 {
 		startIndex := i
 
-		RESPType, err := categoriseRESPType(string(RESPContent[i]))
+		RESPType, err := CategoriseRESPType(string(RESPContent[i]))
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -154,7 +112,7 @@ func parseRESP(RESPContent []byte) ([][]string, []int, []int, error) {
 	return results, consumed, purposes, nil
 }
 
-func categoriseRESPType(firstLetter string) (int, error) {
+func CategoriseRESPType(firstLetter string) (int, error) {
 	if len(firstLetter) != 1 {
 		return -1, errors.New("argument must be a single character")
 	}
@@ -172,75 +130,21 @@ func categoriseRESPType(firstLetter string) (int, error) {
 	}
 }
 
-// func parseRedisArray(RESPArray []byte) ([][]string, []int) {
-// 	// first parameter represents the decoded text
-// 	// second parameter represents the type of text each one is (0 for RDB file contents, 1 for command)
-
-// 	segmentLength := len(RESPArray)
-// 	results := [][]string{}
-// 	types := []int{}
-
-// 	i := 0 // array pointers
-// 	for i < segmentLength-1 {
-// 		j := i + 1
-
-// 		for j < len(RESPArray) && unicode.IsDigit(rune(RESPArray[j])) {
-// 			j++
-// 		}
-
-// 		lengthStr := string(RESPArray[i+1 : j])
-// 		length, err := strconv.Atoi(lengthStr)
-// 		if err != nil {
-// 			fmt.Println("Problem: error thrown when parsing Redis array (1)")
-// 			os.Exit(1)
-// 		}
-
-// 		i += 3 + len(lengthStr) // shift right from `[length]\r\n`
-
-// 		result := []string{}
-// 		for range length {
-// 			k := i + 1
-// 			for k < len(RESPArray) && unicode.IsDigit(rune(RESPArray[k])) {
-// 				k++
-// 			}
-
-// 			wordLengthStr := string(RESPArray[i+1 : k])
-// 			wordLength, err := strconv.Atoi(wordLengthStr)
-// 			if err != nil {
-// 				fmt.Println("Problem: error thrown when parsing Redis array (2)")
-// 				os.Exit(1)
-// 			}
-
-// 			i += 3 + len(wordLengthStr)
-// 			end := i + wordLength
-
-// 			element := RESPArray[i:end]
-// 			result = append(result, string(element))
-
-// 			i = end + 2
-// 		}
-
-// 		results = append(results, result)
-// 	}
-
-// 	return results
-// }
-
-func sliceEquals(first, second []string) bool {
+func SliceEquals(first, second []string) bool {
 	return reflect.DeepEqual(first, second)
 }
 
-func encodeSimpleString(output string) []byte {
+func EncodeSimpleString(output string) []byte {
 	result := fmt.Sprintf("+%s\r\n", output)
 	return []byte(result)
 }
 
-func encodeBulkString(output string) []byte {
+func EncodeBulkString(output string) []byte {
 	result := fmt.Sprintf("$%d\r\n%s\r\n", len(output), output)
 	return []byte(result)
 }
 
-func encodeBulkArray(output []string) []byte {
+func EncodeBulkArray(output []string) []byte {
 	result := fmt.Sprintf("*%d\r\n", len(output))
 
 	for _, o := range output {
@@ -250,22 +154,32 @@ func encodeBulkArray(output []string) []byte {
 	return []byte(result)
 }
 
-func encodeInteger(num int) []byte {
+func EncodeInteger(num int) []byte {
 	result := fmt.Sprintf(":%d\r\n", num)
 	return []byte(result)
 }
 
-func encodeRDBFile(length int, content []byte) []byte {
+func EncodeRDBFile(length int, content []byte) []byte {
 	result := append(fmt.Appendf(nil, "$%d\r\n", length), content...)
 	return result
 }
 
-func nullBulkString() []byte {
+func NullBulkString() []byte {
 	result := "$-1\r\n"
 	return []byte(result)
 }
 
-func toggleEndianBinary(input string) (string, error) {
+func EncodeSimpleError(message string) []byte {
+	result := fmt.Sprintf("-ERR %s\r\n", message)
+	return []byte(result)
+}
+
+func EncodeBulkError(message string) []byte {
+	result := fmt.Sprintf("!%d\r\nERR %s\r\n", len(message), message)
+	return []byte(result)
+}
+
+func ToggleEndianBinary(input string) (string, error) {
 	// toggles between little-endian and big-endian for hex strings
 	if len(input)%8 != 0 {
 		toBePrepended := ""
@@ -283,7 +197,7 @@ func toggleEndianBinary(input string) (string, error) {
 	return output, nil
 }
 
-func toggleEndianHex(input string) (string, error) {
+func ToggleEndianHex(input string) (string, error) {
 	// toggles between little-endian and big-endian for hex strings
 	if len(input)%2 != 0 {
 		return "", errors.New("input HEX code must represent a whole number of bytes")
@@ -295,4 +209,15 @@ func toggleEndianHex(input string) (string, error) {
 	}
 
 	return output, nil
+}
+
+func RandomAlphanumGenerator(length int) string {
+	// Note: a truly random seed would be used in production
+	characters := "abcdefghijklmnopqrstuvwxyz0123456789"
+	resultBytes := make([]byte, length)
+	for i := range resultBytes {
+		resultBytes[i] = characters[rand.Intn(len(characters))]
+	}
+
+	return string(resultBytes)
 }
