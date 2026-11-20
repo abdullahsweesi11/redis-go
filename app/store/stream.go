@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Stream struct {
@@ -47,16 +48,26 @@ func AppendToStream(key string, entry StreamEntry) error {
 }
 
 func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (uint64, uint64, error) {
+	if entryID == "*" {
+		entryID = "*-*"
+	}
+
 	elems := strings.Split(entryID, "-")
 	if len(elems) != 2 {
 		fmt.Println("Problem: Invalid format for entry ID")
 		return 0, 0, errors.New("Invalid format for entry ID")
 	}
 
-	milliseconds, err := strconv.ParseUint(elems[0], 10, 64)
-	if err != nil {
-		fmt.Println("Problem: Could not parse milliseconds")
-		return 0, 0, errors.New("Internal server error [parsing milliseconds]")
+	var milliseconds uint64
+	var err error
+	if elems[0] == "*" {
+		milliseconds = uint64(time.Now().UnixMilli())
+	} else {
+		milliseconds, err = strconv.ParseUint(elems[0], 10, 64)
+		if err != nil {
+			fmt.Println("Problem: Could not parse milliseconds")
+			return 0, 0, errors.New("Internal server error [parsing milliseconds]")
+		}
 	}
 
 	var sequence uint64
