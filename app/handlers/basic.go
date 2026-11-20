@@ -92,7 +92,7 @@ func HandleGet(cmd []string) []byte {
 		return utils.NullBulkString()
 	}
 
-	return utils.EncodeBulkString(val)
+	return utils.EncodeBulkString(val.(string))
 }
 
 func HandleConfigGet(cmd []string) []byte {

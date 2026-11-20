@@ -53,7 +53,7 @@ func StoreSetEntry(key string, entry Entry) {
 	store[key] = entry
 }
 
-func StoreGet(key string) (string, bool) {
+func StoreGet(key string) (any, bool) {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
 
@@ -65,7 +65,7 @@ func StoreGet(key string) (string, bool) {
 		delete(store, key)
 		return "", false
 	}
-	return entry.Value.(string), true
+	return entry.Value, true
 }
 
 func StoreType(key string) string {
