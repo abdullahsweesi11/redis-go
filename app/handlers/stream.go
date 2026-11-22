@@ -29,25 +29,10 @@ func HandleXADD(cmd []string) []byte {
 	}
 
 	entries := stream.(store.Stream).Entries
-	var lastEntry *store.StreamEntry
-	if len(entries) > 0 {
-		lastEntry = &entries[len(entries)-1]
-	}
 
-	// validate the entry ID is greater than 0-0
-	milliseconds, sequence, err := store.ParseStreamEntryID(entryID, lastEntry)
+	milliseconds, sequence, err := store.ParseStreamEntryID(entryID, &entries, true)
 	if err != nil {
 		return utils.EncodeSimpleError(err.Error())
-	}
-
-	if *milliseconds == 0 && *sequence == 0 {
-		return utils.EncodeSimpleError("The ID specified in XADD must be greater than 0-0")
-	}
-
-	// further ID validation
-	if lastEntry != nil && (lastEntry.ID.Milliseconds > *milliseconds ||
-		(lastEntry.ID.Milliseconds == *milliseconds && lastEntry.ID.Sequence >= *sequence)) {
-		return utils.EncodeSimpleError("The ID specified in XADD is equal or smaller than the target stream top item")
 	}
 
 	// Create stream entry
@@ -83,16 +68,6 @@ func HandleXRANGE(cmd []string) []byte {
 	firstEntryID := cmd[2]
 	lastEntryID := cmd[3]
 
-	firstMilliseconds, firstSequence, err := store.ParseStreamEntryID(firstEntryID, nil)
-	if err != nil {
-		return utils.EncodeSimpleError(err.Error())
-	}
-
-	lastMilliseconds, lastSequence, err := store.ParseStreamEntryID(lastEntryID, nil)
-	if err != nil {
-		return utils.EncodeSimpleError(err.Error())
-	}
-
 	// Get an initialised stream
 	stream, exists := store.StoreGet(streamKey)
 	if !exists {
@@ -101,6 +76,16 @@ func HandleXRANGE(cmd []string) []byte {
 	}
 
 	entries := stream.(store.Stream).Entries
+
+	firstMilliseconds, firstSequence, err := store.ParseStreamEntryID(firstEntryID, &entries, false)
+	if err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	}
+
+	lastMilliseconds, lastSequence, err := store.ParseStreamEntryID(lastEntryID, &entries, false)
+	if err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	}
 
 	intermediate := []any{}
 

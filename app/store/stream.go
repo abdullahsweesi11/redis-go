@@ -71,9 +71,23 @@ func AppendToStream(key string, entry StreamEntry) error {
 	return nil
 }
 
-func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (*uint64, *uint64, error) {
-	if entryID == "*" {
+func ParseStreamEntryID(entryID string, entries *[]StreamEntry, validate bool) (*uint64, *uint64, error) {
+	var firstEntry *StreamEntry
+	var lastEntry *StreamEntry
+	if entries != nil && len(*entries) > 0 {
+		firstEntry = &(*entries)[0]
+		lastEntry = &(*entries)[len(*entries)-1]
+	}
+
+	switch entryID {
+	case "*":
 		entryID = "*-*"
+	case "-":
+		if firstEntry == nil {
+			fmt.Println("Problem: entry list is empty")
+			return nil, nil, errors.New("Entry list is empty")
+		}
+		return &firstEntry.ID.Milliseconds, &firstEntry.ID.Sequence, nil
 	}
 
 	noSequenceId := false
@@ -119,5 +133,27 @@ func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (*uint64, *uint6
 		}
 	}
 
+	if validate {
+		if err := validateStreamEntryID(milliseconds, sequence, lastEntry); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	return &milliseconds, &sequence, nil
+}
+
+func validateStreamEntryID(milliseconds, sequence uint64, lastEntry *StreamEntry) error {
+	// validate the entry ID is greater than 0-0
+	if milliseconds == 0 && sequence == 0 {
+		return errors.New("The ID specified in XADD must be greater than 0-0")
+	}
+
+	// further ID validation
+	if lastEntry != nil && (lastEntry.ID.Milliseconds > milliseconds ||
+		(lastEntry.ID.Milliseconds == milliseconds && lastEntry.ID.Sequence >= sequence)) {
+		fmt.Println(milliseconds, sequence, *lastEntry)
+		return errors.New("The ID specified in XADD is equal or smaller than the target stream top item")
+	}
+
+	return nil
 }
