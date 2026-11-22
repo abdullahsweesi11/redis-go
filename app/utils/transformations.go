@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -177,6 +178,33 @@ func EncodeSimpleError(message string) []byte {
 func EncodeBulkError(message string) []byte {
 	result := fmt.Sprintf("!%d\r\nERR %s\r\n", len(message), message)
 	return []byte(result)
+}
+
+func EncodeMultiDimensional(output any) []byte {
+	// written to work with XRANGE,
+	// which has a specific structure of []any{[]any{string1, []string{string2, string3}}}.
+	// Inputs with other structures may produce undesirable results
+
+	switch v := output.(type) {
+	case []any:
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "*%d\r\n", len(v))
+		for _, item := range v {
+			buf.Write(EncodeMultiDimensional(item))
+		}
+		return buf.Bytes()
+	case []string:
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "*%d\r\n", len(v))
+		for _, s := range v {
+			buf.Write(EncodeBulkString(s))
+		}
+		return buf.Bytes()
+	case string:
+		return EncodeBulkString(v)
+	default:
+		return NullBulkString()
+	}
 }
 
 func ToggleEndianBinary(input string) (string, error) {

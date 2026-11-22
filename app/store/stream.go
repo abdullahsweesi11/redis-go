@@ -22,6 +22,30 @@ type StreamID struct {
 	Sequence     uint64
 }
 
+func (se *StreamEntry) ToString() string {
+	return fmt.Sprintf("%d-%d", se.ID.Milliseconds, se.ID.Sequence)
+}
+
+func (se *StreamEntry) IsAfter(milliseconds, sequence *uint64) bool {
+	if milliseconds == nil {
+		return false
+	}
+	if sequence == nil {
+		return se.ID.Milliseconds >= *milliseconds
+	}
+	return se.ID.Milliseconds >= *milliseconds && se.ID.Sequence >= *sequence
+}
+
+func (se *StreamEntry) IsBefore(milliseconds, sequence *uint64) bool {
+	if milliseconds == nil {
+		return false
+	}
+	if sequence == nil {
+		return se.ID.Milliseconds <= *milliseconds
+	}
+	return se.ID.Milliseconds <= *milliseconds && se.ID.Sequence <= *sequence
+}
+
 func AppendToStream(key string, entry StreamEntry) error {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
@@ -47,15 +71,19 @@ func AppendToStream(key string, entry StreamEntry) error {
 	return nil
 }
 
-func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (uint64, uint64, error) {
+func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (*uint64, *uint64, error) {
 	if entryID == "*" {
 		entryID = "*-*"
 	}
 
+	noSequenceId := false
+
 	elems := strings.Split(entryID, "-")
-	if len(elems) != 2 {
+	if len(elems) == 1 {
+		noSequenceId = true
+	} else if len(elems) != 2 {
 		fmt.Println("Problem: Invalid format for entry ID")
-		return 0, 0, errors.New("Invalid format for entry ID")
+		return nil, nil, errors.New("Invalid format for entry ID")
 	}
 
 	var milliseconds uint64
@@ -66,8 +94,12 @@ func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (uint64, uint64,
 		milliseconds, err = strconv.ParseUint(elems[0], 10, 64)
 		if err != nil {
 			fmt.Println("Problem: Could not parse milliseconds")
-			return 0, 0, errors.New("Internal server error [parsing milliseconds]")
+			return nil, nil, errors.New("Internal server error [parsing milliseconds]")
 		}
+	}
+
+	if noSequenceId {
+		return &milliseconds, nil, nil
 	}
 
 	var sequence uint64
@@ -83,9 +115,9 @@ func ParseStreamEntryID(entryID string, lastEntry *StreamEntry) (uint64, uint64,
 		sequence, err = strconv.ParseUint(elems[1], 10, 64)
 		if err != nil {
 			fmt.Println("Problem: Could not parse sequence")
-			return 0, 0, errors.New("Internal server error [parsing sequence]")
+			return nil, nil, errors.New("Internal server error [parsing sequence]")
 		}
 	}
-	fmt.Println(milliseconds, sequence)
-	return milliseconds, sequence, nil
+
+	return &milliseconds, &sequence, nil
 }

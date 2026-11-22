@@ -40,6 +40,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	// Stream handlers
 	case "XADD":
 		return handlers.HandleXADD(cmd)
+	case "XRANGE":
+		return handlers.HandleXRANGE(cmd)
 	default:
 		return utils.NullBulkString()
 	}
