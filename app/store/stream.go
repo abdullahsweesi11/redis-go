@@ -88,6 +88,12 @@ func ParseStreamEntryID(entryID string, entries *[]StreamEntry, validate bool) (
 			return nil, nil, errors.New("Entry list is empty")
 		}
 		return &firstEntry.ID.Milliseconds, &firstEntry.ID.Sequence, nil
+	case "+":
+		if lastEntry == nil {
+			fmt.Println("Problem: entry list is empty")
+			return nil, nil, errors.New("Entry list is empty")
+		}
+		return &lastEntry.ID.Milliseconds, &lastEntry.ID.Sequence, nil
 	}
 
 	noSequenceId := false
