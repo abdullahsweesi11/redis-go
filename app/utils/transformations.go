@@ -120,11 +120,13 @@ func CategoriseRESPType(firstLetter string) (int, error) {
 
 	switch firstLetter {
 	case "+":
-		return 0, nil
+		return 0, nil // simple string
 	case "$":
-		return 1, nil
+		return 1, nil // bulk string
 	case "*":
-		return 2, nil
+		return 2, nil // bulk array
+	case ":":
+		return 3, nil // integer
 	default:
 		fmt.Println(firstLetter)
 		return -1, errors.New("first character is not a valid option")

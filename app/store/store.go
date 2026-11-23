@@ -36,7 +36,11 @@ func StoreSetFromCommand(cmd []string) error {
 	key := cmd[1]
 	val := cmd[2]
 
-	StoreSet(key, val, "string", expiresAt)
+	if _, err := strconv.Atoi(val); err == nil {
+		StoreSet(key, val, "int", expiresAt)
+	} else {
+		StoreSet(key, val, "string", expiresAt)
+	}
 
 	return nil
 }
@@ -87,6 +91,12 @@ func StoreKeys() []string {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
 
+	for key, entry := range store {
+		if entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt) {
+			delete(store, key)
+		}
+	}
+
 	keys := make([]string, len(store))
 	i := 0
 
@@ -96,4 +106,29 @@ func StoreKeys() []string {
 	}
 
 	return keys
+}
+
+func StoreIncrement(key string) (int, error) {
+	entry, ok := store[key]
+	if !ok {
+		return 0, errors.New("Entry does not exist")
+	}
+	if entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt) {
+		delete(store, key)
+		return 0, errors.New("Entry does not exist")
+	}
+
+	if entry.Type != "int" {
+		return 0, errors.New("Cannot increment non-int type")
+	}
+
+	intVal, err := strconv.Atoi(entry.Value.(string))
+	if err != nil {
+		return 0, errors.New("Couldn't convert entry value to integer")
+	}
+
+	newVal := intVal + 1
+	store[key] = Entry{newVal, "int", entry.ExpiresAt}
+
+	return newVal, nil
 }
