@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,12 +122,16 @@ func StoreIncrement(key string) (int, error) {
 	}
 
 	if entry.Type != "int" {
-		return 0, errors.New("Cannot increment non-int type")
+		return 0, errors.New("value is not an integer or out of range")
 	}
 
 	intVal, err := strconv.Atoi(entry.Value.(string))
 	if err != nil {
 		return 0, errors.New("Couldn't convert entry value to integer")
+	}
+
+	if intVal == math.MaxInt {
+		return 0, errors.New("value is not an integer or out of range")
 	}
 
 	newVal := intVal + 1
