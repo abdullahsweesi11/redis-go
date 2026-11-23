@@ -109,13 +109,15 @@ func StoreKeys() []string {
 }
 
 func StoreIncrement(key string) (int, error) {
+	storeMutex.Lock()
+	defer storeMutex.Unlock()
+
 	entry, ok := store[key]
-	if !ok {
-		return 0, errors.New("Entry does not exist")
-	}
-	if entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt) {
+	if !ok || (entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt)) {
 		delete(store, key)
-		return 0, errors.New("Entry does not exist")
+
+		store[key] = Entry{"1", "int", nil}
+		return 1, nil
 	}
 
 	if entry.Type != "int" {
@@ -128,7 +130,7 @@ func StoreIncrement(key string) (int, error) {
 	}
 
 	newVal := intVal + 1
-	store[key] = Entry{newVal, "int", entry.ExpiresAt}
+	store[key] = Entry{fmt.Sprintf("%d", newVal), "int", entry.ExpiresAt}
 
 	return newVal, nil
 }
