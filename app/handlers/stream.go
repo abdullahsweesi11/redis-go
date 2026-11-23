@@ -33,14 +33,12 @@ func HandleXADD(cmd []string) []byte {
 		ID:     store.StreamID{Milliseconds: *milliseconds, Sequence: *sequence},
 		Fields: map[string]string{},
 	}
-	i := 3
 
-	for i < len(cmd) {
+	for i := 3; i < len(cmd); i += 2 {
 		fieldKey := cmd[i]
 		fieldValue := cmd[i+1]
 
 		entry.Fields[fieldKey] = fieldValue
-		i += 2
 	}
 
 	err = store.AppendToStream(streamKey, entry)
@@ -101,43 +99,63 @@ func HandleXREAD(cmd []string) []byte {
 		return utils.EncodeSimpleError(fmt.Sprintf("Unknown XREAD argument (%v)", cmd[1]))
 	}
 
-	streamKey := cmd[2]
-	entryID := cmd[3]
+	var keyList, iDList []string
 
-	stream, err := store.GetStream(streamKey, false)
-	if err != nil {
-		fmt.Println("Problem: stream does not exist")
-		return utils.EncodeSimpleError(err.Error())
-	}
+	for i := 2; i < len(cmd); i += 1 {
+		item := cmd[i]
 
-	entries := stream.Entries
+		if elems := strings.Split(item, "-"); len(elems) >= 2 {
+			keyList = cmd[2:i]
+			iDList = cmd[i:]
+			break
+		}
 
-	milliseconds, sequence, err := store.ParseStreamEntryID(entryID, &entries, false)
-	if err != nil {
-		return utils.EncodeSimpleError(err.Error())
-	}
-
-	intermediate := [][]any{
-		{
-			streamKey,
-			[]any{},
-		},
-	}
-	streamList := intermediate[0][1].([]any)
-
-	for _, entry := range entries {
-		if entry.IsAfter(milliseconds, sequence) {
-			fields := make([]string, 0, len(entry.Fields)*2)
-
-			for key, val := range entry.Fields {
-				fields = append(fields, key, val)
-			}
-
-			streamList = append(streamList, []any{entry.ToString(), fields})
+		if i == len(cmd)-1 {
+			return utils.EncodeSimpleError("Invalid arguments")
 		}
 	}
 
-	intermediate[0][1] = streamList
+	if len(keyList) != len(iDList) {
+		return utils.EncodeSimpleError("Number of keys doesn't match number of IDs")
+	}
+
+	intermediate := [][]any{}
+
+	for i := range len(keyList) {
+		streamKey := keyList[i]
+		entryID := iDList[i]
+
+		stream, err := store.GetStream(streamKey, false)
+		if err != nil {
+			fmt.Println("Problem: stream does not exist")
+			return utils.EncodeSimpleError(err.Error())
+		}
+
+		entries := stream.Entries
+
+		milliseconds, sequence, err := store.ParseStreamEntryID(entryID, &entries, false)
+		if err != nil {
+			return utils.EncodeSimpleError(err.Error())
+		}
+
+		intermediate = append(intermediate, []any{streamKey, []any{}})
+
+		entryList := intermediate[i][1].([]any)
+
+		for _, entry := range entries {
+			if entry.IsAfter(milliseconds, sequence) {
+				fields := make([]string, 0, len(entry.Fields)*2)
+
+				for key, val := range entry.Fields {
+					fields = append(fields, key, val)
+				}
+
+				entryList = append(entryList, []any{entry.ToString(), fields})
+			}
+		}
+
+		intermediate[i][1] = entryList
+	}
 
 	return utils.EncodeMultiDimensional(intermediate)
 }
