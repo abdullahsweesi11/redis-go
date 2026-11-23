@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/app/streams"
@@ -49,7 +48,7 @@ func HandleXADD(cmd []string) []byte {
 	}
 
 	select {
-	case streams.NewStreamEntryChan <- streamKey:
+	case streams.NewStreamEntryChan <- streams.StreamEntryInfo{StreamKey: streamKey, Entry: entry}:
 	default:
 	}
 
@@ -108,6 +107,7 @@ func HandleXREAD(cmd []string) []byte {
 
 	var blocking = false
 	var blockingDuration time.Duration
+	var newOnlyMode = false
 	var err error
 	if slices.Contains(cmd, "BLOCK") || slices.Contains(cmd, "block") {
 		blocking = true
@@ -116,57 +116,54 @@ func HandleXREAD(cmd []string) []byte {
 			fmt.Println("Problem: could not transform wait deadline into time.Duration")
 			return utils.EncodeSimpleError("Invalid wait duration")
 		}
-	}
 
-	startIndex := 2
-	if blocking {
-		startIndex += 2
-	}
-
-	fmt.Println(cmd, startIndex)
-
-	var keyList, iDList []string
-
-	for i := startIndex; i < len(cmd); i += 1 {
-		item := cmd[i]
-
-		if elems := strings.Split(item, "-"); len(elems) >= 2 {
-			keyList = cmd[startIndex:i]
-			iDList = cmd[i:]
-			break
-		}
-
-		if i == len(cmd)-1 {
-			return utils.EncodeSimpleError("Invalid arguments")
+		if slices.Contains(cmd, "$") {
+			newOnlyMode = true
 		}
 	}
 
-	fmt.Println(keyList, iDList)
-	if len(keyList) != len(iDList) {
-		return utils.EncodeSimpleError("Number of keys doesn't match number of IDs")
+	if newOnlyMode {
+		streamKey := cmd[len(cmd)-2]
+
+		results, err := handleNewOnlyMode(streamKey, blockingDuration)
+		if err != nil {
+			return utils.EncodeSimpleError(err.Error())
+		}
+		return results
 	}
 
-	intermediate, numMatchedEntries, err := streams.GetEntriesAfterFromList(keyList, iDList)
+	keyList, iDList, err := streams.GetListsFromXREAD(cmd, blocking)
 	if err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	}
 
-	timeout := time.After(blockingDuration)
-	timedOut := false
+	intermediate, numMatchedEntries, err := streams.GetEntriesAfterFromList(keyList, iDList, false)
+	if err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	}
+
+	var timeout <-chan time.Time
+	var timedOut = false
+	if blockingDuration > 0 {
+		timeout = time.After(blockingDuration)
+	}
+
+	// drain notification channel
+	for len(streams.NewStreamEntryChan) > 0 {
+		<-streams.NewStreamEntryChan
+	}
 
 	for blocking && numMatchedEntries == 0 {
 		select {
-		case k := <-streams.NewStreamEntryChan:
-			if slices.Contains(keyList, k) {
-				intermediate, numMatchedEntries, err = streams.GetEntriesAfterFromList(keyList, iDList)
+		case info := <-streams.NewStreamEntryChan:
+			if slices.Contains(keyList, info.StreamKey) {
+				intermediate, numMatchedEntries, err = streams.GetEntriesAfterFromList(keyList, iDList, false)
 				if err != nil {
 					return utils.EncodeSimpleError(err.Error())
 				}
 			}
 		case <-timeout:
-			if blockingDuration > 0 {
-				timedOut = true
-			}
+			timedOut = true
 		}
 
 		if timedOut {
@@ -175,4 +172,34 @@ func HandleXREAD(cmd []string) []byte {
 	}
 
 	return utils.EncodeMultiDimensional(intermediate)
+}
+
+func handleNewOnlyMode(streamKey string, duration time.Duration) ([]byte, error) {
+
+	// drain notification channel
+	for len(streams.NewStreamEntryChan) > 0 {
+		<-streams.NewStreamEntryChan
+	}
+
+	var timeout <-chan time.Time
+	if duration > 0 {
+		timeout = time.After(duration)
+	}
+
+	for {
+		select {
+		case info := <-streams.NewStreamEntryChan:
+			if info.StreamKey == streamKey {
+				keyList := []string{streamKey}
+				iDList := []string{info.Entry.ToString()}
+				intermediate, _, err := streams.GetEntriesAfterFromList(keyList, iDList, true)
+				if err != nil {
+					return nil, err
+				}
+				return utils.EncodeMultiDimensional(intermediate), nil
+			}
+		case <-timeout:
+			return utils.NullBulkArray(), nil
+		}
+	}
 }

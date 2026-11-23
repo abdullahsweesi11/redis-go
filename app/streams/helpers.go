@@ -148,7 +148,36 @@ func validateStreamEntryID(milliseconds, sequence uint64, lastEntry *StreamEntry
 	return nil
 }
 
-func GetEntriesAfterFromList(keyList, iDList []string) ([][]any, int, error) {
+func GetListsFromXREAD(cmd []string, blocking bool) ([]string, []string, error) {
+	startIndex := 2
+	if blocking {
+		startIndex += 2
+	}
+
+	var keyList, iDList []string
+
+	for i := startIndex; i < len(cmd); i += 1 {
+		item := cmd[i]
+
+		if elems := strings.Split(item, "-"); len(elems) >= 2 {
+			keyList = cmd[startIndex:i]
+			iDList = cmd[i:]
+			break
+		}
+
+		if i == len(cmd)-1 {
+			return nil, nil, errors.New("Invalid arguments")
+		}
+	}
+
+	if len(keyList) != len(iDList) {
+		return nil, nil, errors.New("Number of keys doesn't match number of IDs")
+	}
+
+	return keyList, iDList, nil
+}
+
+func GetEntriesAfterFromList(keyList, iDList []string, inclusive bool) ([][]any, int, error) {
 	intermediate := [][]any{}
 	numMatchedEntries := 0
 
@@ -163,6 +192,7 @@ func GetEntriesAfterFromList(keyList, iDList []string) ([][]any, int, error) {
 		}
 
 		entries := stream.Entries
+		fmt.Println(entries)
 
 		milliseconds, sequence, err := ParseStreamEntryID(entryID, &entries, false)
 		if err != nil {
@@ -174,7 +204,9 @@ func GetEntriesAfterFromList(keyList, iDList []string) ([][]any, int, error) {
 		entryList := intermediate[i][1].([]any)
 
 		for _, entry := range entries {
-			if entry.IsAfter(milliseconds, sequence) {
+			fmt.Println(entry.ID)
+			fmt.Println(*milliseconds, *sequence)
+			if (!inclusive && entry.IsAfter(milliseconds, sequence)) || (inclusive && entry.IsEqualOrAfter(milliseconds, sequence)) {
 				numMatchedEntries += 1
 				fields := make([]string, 0, len(entry.Fields)*2)
 

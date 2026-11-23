@@ -14,4 +14,9 @@ type StreamID struct {
 	Sequence     uint64
 }
 
-var NewStreamEntryChan chan string = make(chan string, 10)
+type StreamEntryInfo struct {
+	StreamKey string
+	Entry     StreamEntry
+}
+
+var NewStreamEntryChan chan StreamEntryInfo = make(chan StreamEntryInfo, 10)
