@@ -164,7 +164,9 @@ func HandleXREAD(cmd []string) []byte {
 				}
 			}
 		case <-timeout:
-			timedOut = true
+			if blockingDuration > 0 {
+				timedOut = true
+			}
 		}
 
 		if timedOut {
