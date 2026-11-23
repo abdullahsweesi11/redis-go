@@ -42,6 +42,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 		return handlers.HandleXADD(cmd)
 	case "XRANGE":
 		return handlers.HandleXRANGE(cmd)
+	case "XREAD":
+		return handlers.HandleXREAD(cmd)
 	default:
 		return utils.NullBulkString()
 	}

@@ -31,6 +31,16 @@ func (se *StreamEntry) IsAfter(milliseconds, sequence *uint64) bool {
 		return false
 	}
 	if sequence == nil {
+		return se.ID.Milliseconds > *milliseconds
+	}
+	return se.ID.Milliseconds >= *milliseconds && se.ID.Sequence > *sequence
+}
+
+func (se *StreamEntry) IsEqualOrAfter(milliseconds, sequence *uint64) bool {
+	if milliseconds == nil {
+		return false
+	}
+	if sequence == nil {
 		return se.ID.Milliseconds >= *milliseconds
 	}
 	return se.ID.Milliseconds >= *milliseconds && se.ID.Sequence >= *sequence
@@ -41,9 +51,42 @@ func (se *StreamEntry) IsBefore(milliseconds, sequence *uint64) bool {
 		return false
 	}
 	if sequence == nil {
+		return se.ID.Milliseconds < *milliseconds
+	}
+	return se.ID.Milliseconds <= *milliseconds && se.ID.Sequence < *sequence
+}
+
+func (se *StreamEntry) IsEqualOrBefore(milliseconds, sequence *uint64) bool {
+	if milliseconds == nil {
+		return false
+	}
+	if sequence == nil {
 		return se.ID.Milliseconds <= *milliseconds
 	}
 	return se.ID.Milliseconds <= *milliseconds && se.ID.Sequence <= *sequence
+}
+
+func GetStream(streamKey string, createIfMissing bool) (*Stream, error) {
+	// Get an initialised stream
+	stream, exists := StoreGet(streamKey)
+	if !exists && createIfMissing {
+		StoreSet(
+			streamKey,
+			Stream{Entries: []StreamEntry{}},
+			"stream",
+			nil,
+		)
+		stream, _ = StoreGet(streamKey)
+	} else if !exists && !createIfMissing {
+		return nil, fmt.Errorf("Could not find stream with key %v", streamKey)
+	}
+
+	result, ok := stream.(Stream)
+	if !ok {
+		return nil, fmt.Errorf("Expected value to be type Stream but found type %T", stream)
+	}
+
+	return &result, nil
 }
 
 func AppendToStream(key string, entry StreamEntry) error {

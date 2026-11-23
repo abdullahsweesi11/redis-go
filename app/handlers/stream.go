@@ -16,26 +16,18 @@ func HandleXADD(cmd []string) []byte {
 	streamKey := cmd[1]
 	entryID := cmd[2]
 
-	// Get an initialised stream
-	stream, exists := store.StoreGet(streamKey)
-	if !exists {
-		store.StoreSet(
-			streamKey,
-			store.Stream{Entries: []store.StreamEntry{}},
-			"stream",
-			nil,
-		)
-		stream, _ = store.StoreGet(streamKey)
+	stream, err := store.GetStream(streamKey, true)
+	if err != nil {
+		return utils.EncodeSimpleError(err.Error())
 	}
 
-	entries := stream.(store.Stream).Entries
+	entries := stream.Entries
 
 	milliseconds, sequence, err := store.ParseStreamEntryID(entryID, &entries, true)
 	if err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	}
 
-	// Create stream entry
 	var entry store.StreamEntry = store.StreamEntry{
 		ID:     store.StreamID{Milliseconds: *milliseconds, Sequence: *sequence},
 		Fields: map[string]string{},
@@ -69,13 +61,13 @@ func HandleXRANGE(cmd []string) []byte {
 	lastEntryID := cmd[3]
 
 	// Get an initialised stream
-	stream, exists := store.StoreGet(streamKey)
-	if !exists {
+	stream, err := store.GetStream(streamKey, false)
+	if err != nil {
 		fmt.Println("Problem: stream does not exist")
-		return utils.EncodeSimpleError(fmt.Sprintf("Could not find stream with key %v", streamKey))
+		return utils.EncodeSimpleError(err.Error())
 	}
 
-	entries := stream.(store.Stream).Entries
+	entries := stream.Entries
 
 	firstMilliseconds, firstSequence, err := store.ParseStreamEntryID(firstEntryID, &entries, false)
 	if err != nil {
@@ -90,7 +82,7 @@ func HandleXRANGE(cmd []string) []byte {
 	intermediate := []any{}
 
 	for _, entry := range entries {
-		if entry.IsAfter(firstMilliseconds, firstSequence) && entry.IsBefore(lastMilliseconds, lastSequence) {
+		if entry.IsEqualOrAfter(firstMilliseconds, firstSequence) && entry.IsEqualOrBefore(lastMilliseconds, lastSequence) {
 			fields := make([]string, 0, len(entry.Fields)*2)
 
 			for key, val := range entry.Fields {
@@ -102,4 +94,8 @@ func HandleXRANGE(cmd []string) []byte {
 	}
 
 	return utils.EncodeMultiDimensional(intermediate)
+}
+
+func HandleXREAD(cmd []string) []byte {
+	return nil
 }
