@@ -1,4 +1,4 @@
-package store
+package streams
 
 import (
 	"errors"
@@ -6,110 +6,51 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/codecrafters-io/redis-starter-go/app/store"
 )
-
-type Stream struct {
-	Entries []StreamEntry
-}
-
-type StreamEntry struct {
-	ID     StreamID
-	Fields map[string]string
-}
-
-type StreamID struct {
-	Milliseconds uint64
-	Sequence     uint64
-}
-
-func (se *StreamEntry) ToString() string {
-	return fmt.Sprintf("%d-%d", se.ID.Milliseconds, se.ID.Sequence)
-}
-
-func (se *StreamEntry) IsAfter(milliseconds, sequence *uint64) bool {
-	if milliseconds == nil {
-		return false
-	}
-	if sequence == nil {
-		return se.ID.Milliseconds > *milliseconds
-	}
-	return se.ID.Milliseconds >= *milliseconds && se.ID.Sequence > *sequence
-}
-
-func (se *StreamEntry) IsEqualOrAfter(milliseconds, sequence *uint64) bool {
-	if milliseconds == nil {
-		return false
-	}
-	if sequence == nil {
-		return se.ID.Milliseconds >= *milliseconds
-	}
-	return se.ID.Milliseconds >= *milliseconds && se.ID.Sequence >= *sequence
-}
-
-func (se *StreamEntry) IsBefore(milliseconds, sequence *uint64) bool {
-	if milliseconds == nil {
-		return false
-	}
-	if sequence == nil {
-		return se.ID.Milliseconds < *milliseconds
-	}
-	return se.ID.Milliseconds <= *milliseconds && se.ID.Sequence < *sequence
-}
-
-func (se *StreamEntry) IsEqualOrBefore(milliseconds, sequence *uint64) bool {
-	if milliseconds == nil {
-		return false
-	}
-	if sequence == nil {
-		return se.ID.Milliseconds <= *milliseconds
-	}
-	return se.ID.Milliseconds <= *milliseconds && se.ID.Sequence <= *sequence
-}
 
 func GetStream(streamKey string, createIfMissing bool) (*Stream, error) {
 	// Get an initialised stream
-	stream, exists := StoreGet(streamKey)
+	storeItem, exists := store.StoreGet(streamKey)
 	if !exists && createIfMissing {
-		StoreSet(
+		store.StoreSet(
 			streamKey,
 			Stream{Entries: []StreamEntry{}},
 			"stream",
 			nil,
 		)
-		stream, _ = StoreGet(streamKey)
+		storeItem, _ = store.StoreGet(streamKey)
 	} else if !exists && !createIfMissing {
 		return nil, fmt.Errorf("Could not find stream with key %v", streamKey)
 	}
 
-	result, ok := stream.(Stream)
+	stream, ok := storeItem.Value.(Stream)
 	if !ok {
-		return nil, fmt.Errorf("Expected value to be type Stream but found type %T", stream)
+		return nil, fmt.Errorf("Expected value to be type Stream but found type %T", storeItem.Value)
 	}
 
-	return &result, nil
+	return &stream, nil
 }
 
-func AppendToStream(key string, entry StreamEntry) error {
-	storeMutex.Lock()
-	defer storeMutex.Unlock()
-
-	storeEntry, ok := store[key]
+func AppendToStream(streamKey string, entry StreamEntry) error {
+	storeItem, ok := store.StoreGet(streamKey)
 	if !ok {
-		fmt.Printf("Problem: key %s does not exist in store", key)
-		return fmt.Errorf("Key %s does not exist in store", key)
+		fmt.Printf("Problem: key %s does not exist in store", streamKey)
+		return fmt.Errorf("Key %s does not exist in store", streamKey)
 	}
 
-	stream, ok := storeEntry.Value.(Stream)
+	stream, ok := storeItem.Value.(Stream)
 	if !ok {
-		fmt.Printf("Problem: got type %T but wanted type Stream", store[key].Value)
-		return fmt.Errorf("got type %T but wanted type Stream", store[key].Value)
+		fmt.Printf("Problem: got type %T but wanted type Stream", storeItem.Value)
+		return fmt.Errorf("Got type %T but wanted type Stream", storeItem.Value)
 	}
 
 	streamEntries := append(stream.Entries, entry)
 	stream.Entries = streamEntries
 
-	storeEntry.Value = stream
-	store[key] = storeEntry
+	storeItem.Value = stream
+	store.StoreSetEntry(streamKey, *storeItem)
 
 	return nil
 }
@@ -205,4 +146,48 @@ func validateStreamEntryID(milliseconds, sequence uint64, lastEntry *StreamEntry
 	}
 
 	return nil
+}
+
+func GetEntriesAfterFromList(keyList, iDList []string) ([][]any, int, error) {
+	intermediate := [][]any{}
+	numMatchedEntries := 0
+
+	for i := range len(keyList) {
+		streamKey := keyList[i]
+		entryID := iDList[i]
+
+		stream, err := GetStream(streamKey, false)
+		if err != nil {
+			fmt.Println("Problem: stream does not exist")
+			return nil, 0, err
+		}
+
+		entries := stream.Entries
+
+		milliseconds, sequence, err := ParseStreamEntryID(entryID, &entries, false)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		intermediate = append(intermediate, []any{streamKey, []any{}})
+
+		entryList := intermediate[i][1].([]any)
+
+		for _, entry := range entries {
+			if entry.IsAfter(milliseconds, sequence) {
+				numMatchedEntries += 1
+				fields := make([]string, 0, len(entry.Fields)*2)
+
+				for key, val := range entry.Fields {
+					fields = append(fields, key, val)
+				}
+
+				entryList = append(entryList, []any{entry.ToString(), fields})
+			}
+		}
+
+		intermediate[i][1] = entryList
+	}
+
+	return intermediate, numMatchedEntries, nil
 }

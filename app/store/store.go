@@ -53,19 +53,19 @@ func StoreSetEntry(key string, entry Entry) {
 	store[key] = entry
 }
 
-func StoreGet(key string) (any, bool) {
+func StoreGet(key string) (*Entry, bool) {
 	storeMutex.Lock()
 	defer storeMutex.Unlock()
 
 	entry, ok := store[key]
 	if !ok {
-		return "", false
+		return nil, false
 	}
 	if entry.ExpiresAt != nil && time.Now().After(*entry.ExpiresAt) {
 		delete(store, key)
-		return "", false
+		return nil, false
 	}
-	return entry.Value, true
+	return &entry, true
 }
 
 func StoreType(key string) string {

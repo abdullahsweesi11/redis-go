@@ -87,12 +87,12 @@ func HandleGet(cmd []string) []byte {
 
 	key := cmd[1]
 
-	val, ok := store.StoreGet(key)
+	entry, ok := store.StoreGet(key)
 	if !ok {
 		return utils.NullBulkString()
 	}
 
-	return utils.EncodeBulkString(val.(string))
+	return utils.EncodeBulkString(entry.Value.(string))
 }
 
 func HandleConfigGet(cmd []string) []byte {

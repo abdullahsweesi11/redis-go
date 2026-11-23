@@ -170,6 +170,11 @@ func NullBulkString() []byte {
 	return []byte(result)
 }
 
+func NullBulkArray() []byte {
+	result := "*-1\r\n"
+	return []byte(result)
+}
+
 func EncodeSimpleError(message string) []byte {
 	result := fmt.Sprintf("-ERR %s\r\n", message)
 	return []byte(result)
