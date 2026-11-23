@@ -181,12 +181,17 @@ func EncodeBulkError(message string) []byte {
 }
 
 func EncodeMultiDimensional(output any) []byte {
-	// written to work with XRANGE,
-	// which has a specific structure of []any{[]any{string1, []string{string2, string3}}}.
-	// Inputs with other structures may produce undesirable results
+	// written for the specific structures of XRANGE and XREAD
 
 	switch v := output.(type) {
 	case []any:
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "*%d\r\n", len(v))
+		for _, item := range v {
+			buf.Write(EncodeMultiDimensional(item))
+		}
+		return buf.Bytes()
+	case [][]any:
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "*%d\r\n", len(v))
 		for _, item := range v {
@@ -203,6 +208,7 @@ func EncodeMultiDimensional(output any) []byte {
 	case string:
 		return EncodeBulkString(v)
 	default:
+		fmt.Printf("Found an unexpected type %T", v)
 		return NullBulkString()
 	}
 }

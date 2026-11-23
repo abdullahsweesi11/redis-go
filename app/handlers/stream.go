@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/codecrafters-io/redis-starter-go/app/store"
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
@@ -60,7 +61,6 @@ func HandleXRANGE(cmd []string) []byte {
 	firstEntryID := cmd[2]
 	lastEntryID := cmd[3]
 
-	// Get an initialised stream
 	stream, err := store.GetStream(streamKey, false)
 	if err != nil {
 		fmt.Println("Problem: stream does not exist")
@@ -97,5 +97,47 @@ func HandleXRANGE(cmd []string) []byte {
 }
 
 func HandleXREAD(cmd []string) []byte {
-	return nil
+	if strings.ToUpper(cmd[1]) != "STREAMS" {
+		return utils.EncodeSimpleError(fmt.Sprintf("Unknown XREAD argument (%v)", cmd[1]))
+	}
+
+	streamKey := cmd[2]
+	entryID := cmd[3]
+
+	stream, err := store.GetStream(streamKey, false)
+	if err != nil {
+		fmt.Println("Problem: stream does not exist")
+		return utils.EncodeSimpleError(err.Error())
+	}
+
+	entries := stream.Entries
+
+	milliseconds, sequence, err := store.ParseStreamEntryID(entryID, &entries, false)
+	if err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	}
+
+	intermediate := [][]any{
+		{
+			streamKey,
+			[]any{},
+		},
+	}
+	streamList := intermediate[0][1].([]any)
+
+	for _, entry := range entries {
+		if entry.IsAfter(milliseconds, sequence) {
+			fields := make([]string, 0, len(entry.Fields)*2)
+
+			for key, val := range entry.Fields {
+				fields = append(fields, key, val)
+			}
+
+			streamList = append(streamList, []any{entry.ToString(), fields})
+		}
+	}
+
+	intermediate[0][1] = streamList
+
+	return utils.EncodeMultiDimensional(intermediate)
 }
