@@ -107,19 +107,11 @@ func (sc *stateContainer) ExecuteTransaction() ([][]string, error) {
 		return nil, errors.New("EXEC without MULTI")
 	}
 
-	if len(sc.queue) == 0 {
-		if _, err := sc.toggleLocked(); err != nil {
-			return nil, err
-		}
-
-		return [][]string{}, nil
-	}
-
 	if _, err := sc.toggleLocked(); err != nil {
 		return nil, err
 	}
 
-	return [][]string{}, nil
+	return sc.queue, nil
 }
 
 func (sc *stateContainer) InsertToQueue(cmd []string) error {

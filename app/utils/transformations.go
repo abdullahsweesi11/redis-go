@@ -138,53 +138,59 @@ func SliceEquals(first, second []string) bool {
 }
 
 func EncodeSimpleString(output string) []byte {
-	result := fmt.Sprintf("+%s\r\n", output)
-	return []byte(result)
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "+%s\r\n", output)
+	return result.Bytes()
 }
 
 func EncodeBulkString(output string) []byte {
-	result := fmt.Sprintf("$%d\r\n%s\r\n", len(output), output)
-	return []byte(result)
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "$%d\r\n%s\r\n", len(output), output)
+	return result.Bytes()
 }
 
 func EncodeBulkArray(output []string) []byte {
-	result := fmt.Sprintf("*%d\r\n", len(output))
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "*%d\r\n", len(output))
 
 	for _, o := range output {
-		result += fmt.Sprintf("$%d\r\n%s\r\n", len(o), o)
+		fmt.Fprintf(&result, "$%d\r\n%s\r\n", len(o), o)
 	}
 
-	return []byte(result)
+	return result.Bytes()
 }
 
 func EncodeInteger(num int) []byte {
-	result := fmt.Sprintf(":%d\r\n", num)
-	return []byte(result)
+	var result bytes.Buffer
+	fmt.Fprintf(&result, ":%d\r\n", num)
+	return result.Bytes()
 }
 
 func EncodeRDBFile(length int, content []byte) []byte {
-	result := append(fmt.Appendf(nil, "$%d\r\n", length), content...)
-	return result
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "$%d\r\n", length)
+	result.Write(content)
+	return result.Bytes()
 }
 
 func NullBulkString() []byte {
-	result := "$-1\r\n"
-	return []byte(result)
+	return []byte("$-1\r\n")
 }
 
 func NullBulkArray() []byte {
-	result := "*-1\r\n"
-	return []byte(result)
+	return []byte("*-1\r\n")
 }
 
 func EncodeSimpleError(message string) []byte {
-	result := fmt.Sprintf("-ERR %s\r\n", message)
-	return []byte(result)
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "-ERR %s\r\n", message)
+	return result.Bytes()
 }
 
 func EncodeBulkError(message string) []byte {
-	result := fmt.Sprintf("!%d\r\nERR %s\r\n", len(message), message)
-	return []byte(result)
+	var result bytes.Buffer
+	fmt.Fprintf(&result, "!%d\r\nERR %s\r\n", len(message), message)
+	return result.Bytes()
 }
 
 func EncodeMultiDimensional(output any) []byte {

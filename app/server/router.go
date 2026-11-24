@@ -58,7 +58,7 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	case "MULTI":
 		return handlers.HandleMulti(conn, cmd)
 	case "EXEC":
-		return handlers.HandleExec(conn, cmd)
+		return handlers.HandleExec(conn, cmd, dispatchCommand)
 	default:
 		return utils.NullBulkString()
 	}

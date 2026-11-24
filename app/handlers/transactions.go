@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"bytes"
+	"fmt"
 	"net"
 
 	"github.com/codecrafters-io/redis-starter-go/app/store"
@@ -35,15 +37,26 @@ func HandleMulti(conn net.Conn, cmd []string) []byte {
 	return utils.EncodeSimpleString("OK")
 }
 
-func HandleExec(conn net.Conn, cmd []string) []byte {
+func HandleExec(conn net.Conn, cmd []string, dispatchFunc func(conn net.Conn, cmd []string) []byte) []byte {
 	if len(cmd) != 1 {
 		return utils.EncodeSimpleError("No arguments allowed for EXEC")
 	}
 
-	result, err := transactions.GetState(conn).ExecuteTransaction()
+	queuedCommands, err := transactions.GetState(conn).ExecuteTransaction()
 	if err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	}
 
-	return utils.EncodeMultiDimensional(result)
+	if len(queuedCommands) == 0 {
+		return []byte("*0\r\n")
+	}
+
+	var results bytes.Buffer
+	fmt.Fprintf(&results, "*%d\r\n", len(queuedCommands))
+
+	for _, queuedCmd := range queuedCommands {
+		results.Write(dispatchFunc(conn, queuedCmd))
+	}
+
+	return results.Bytes()
 }
