@@ -2,6 +2,7 @@ package transactions
 
 import (
 	"errors"
+	"net"
 	"sync"
 )
 
@@ -23,13 +24,33 @@ type stateContainer struct {
 	queue [][]string
 }
 
-var GetState = sync.OnceValue(func() *stateContainer {
-	return &stateContainer{
-		sync.Mutex{},
-		committed,
-		[][]string{},
+var (
+	containerMap      = make(map[net.Conn]*stateContainer)
+	containerMapMutex sync.Mutex
+)
+
+func NewState(conn net.Conn) error {
+	containerMapMutex.Lock()
+	defer containerMapMutex.Unlock()
+
+	if _, exists := containerMap[conn]; exists {
+		return errors.New("Transaction state is already initialised")
 	}
-})
+
+	containerMap[conn] = &stateContainer{
+		state: committed,
+		queue: [][]string{},
+	}
+
+	return nil
+}
+
+func GetState(conn net.Conn) *stateContainer {
+	containerMapMutex.Lock()
+	defer containerMapMutex.Unlock()
+
+	return containerMap[conn]
+}
 
 func (sc *stateContainer) ToString() string {
 	state := sc.state

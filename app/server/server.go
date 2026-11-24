@@ -34,6 +34,7 @@ func HandleConnection(conn net.Conn) {
 			if len(cmd) == 0 {
 				continue
 			}
+
 			response := dispatchCommand(conn, cmd)
 			if len(response) > 0 {
 				_, err := conn.Write(response)

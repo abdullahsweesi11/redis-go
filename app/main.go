@@ -8,6 +8,7 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/app/db"
 	"github.com/codecrafters-io/redis-starter-go/app/repl"
 	"github.com/codecrafters-io/redis-starter-go/app/server"
+	"github.com/codecrafters-io/redis-starter-go/app/transactions"
 )
 
 func main() {
@@ -37,7 +38,13 @@ func main() {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println("Problem: error accepting connection: ", err.Error())
+			fmt.Println("Problem: error accepting connection; ", err.Error())
+			os.Exit(1)
+		}
+
+		// Initialise transaction state
+		if err := transactions.NewState(conn); err != nil {
+			fmt.Println("Problem: cannot initialise system config; ", err.Error())
 			os.Exit(1)
 		}
 

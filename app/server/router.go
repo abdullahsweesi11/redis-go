@@ -5,11 +5,19 @@ import (
 	"strings"
 
 	"github.com/codecrafters-io/redis-starter-go/app/handlers"
+	"github.com/codecrafters-io/redis-starter-go/app/transactions"
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
 )
 
 func dispatchCommand(conn net.Conn, cmd []string) []byte {
-	switch strings.ToUpper(cmd[0]) {
+	cmdName := strings.ToUpper(cmd[0])
+
+	if transactions.GetState(conn).ToString() == "unstable" && checkForTransaction(cmdName) {
+		transactions.GetState(conn).InsertToQueue(cmd)
+		return utils.EncodeSimpleString("QUEUED")
+	}
+
+	switch cmdName {
 	case "PING":
 		return handlers.HandlePing(conn, cmd)
 	case "ECHO":
@@ -48,10 +56,19 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	case "INCR":
 		return handlers.HandleIncr(cmd)
 	case "MULTI":
-		return handlers.HandleMulti(cmd)
+		return handlers.HandleMulti(conn, cmd)
 	case "EXEC":
-		return handlers.HandleExec(cmd)
+		return handlers.HandleExec(conn, cmd)
 	default:
 		return utils.NullBulkString()
+	}
+}
+
+func checkForTransaction(cmdName string) bool {
+	switch cmdName {
+	case "MULTI", "EXEC":
+		return false
+	default:
+		return true
 	}
 }

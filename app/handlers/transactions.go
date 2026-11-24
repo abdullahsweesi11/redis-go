@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"net"
+
 	"github.com/codecrafters-io/redis-starter-go/app/store"
 	"github.com/codecrafters-io/redis-starter-go/app/transactions"
 	"github.com/codecrafters-io/redis-starter-go/app/utils"
@@ -21,24 +23,24 @@ func HandleIncr(cmd []string) []byte {
 	return utils.EncodeInteger(newVal)
 }
 
-func HandleMulti(cmd []string) []byte {
+func HandleMulti(conn net.Conn, cmd []string) []byte {
 	if len(cmd) != 1 {
 		return utils.EncodeSimpleError("No arguments allowed for MULTI")
 	}
 
-	if err := transactions.GetState().StartTransaction(); err != nil {
+	if err := transactions.GetState(conn).StartTransaction(); err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	}
 
 	return utils.EncodeSimpleString("OK")
 }
 
-func HandleExec(cmd []string) []byte {
+func HandleExec(conn net.Conn, cmd []string) []byte {
 	if len(cmd) != 1 {
 		return utils.EncodeSimpleError("No arguments allowed for EXEC")
 	}
 
-	result, err := transactions.GetState().ExecuteTransaction()
+	result, err := transactions.GetState(conn).ExecuteTransaction()
 	if err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	}
