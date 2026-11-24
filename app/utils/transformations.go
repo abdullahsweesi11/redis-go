@@ -205,6 +205,8 @@ func EncodeMultiDimensional(output any) []byte {
 			buf.Write(EncodeMultiDimensional(item))
 		}
 		return buf.Bytes()
+	case string:
+		return EncodeBulkString(v)
 	case []string:
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "*%d\r\n", len(v))
@@ -212,11 +214,19 @@ func EncodeMultiDimensional(output any) []byte {
 			buf.Write(EncodeBulkString(s))
 		}
 		return buf.Bytes()
-	case string:
-		return EncodeBulkString(v)
+	case [][]string:
+		var buf bytes.Buffer
+		fmt.Fprintf(&buf, "*%d\r\n", len(v))
+		for _, row := range v {
+			fmt.Fprintf(&buf, "*%d\r\n", len(v))
+			for _, s := range row {
+				buf.Write(EncodeBulkString(s))
+			}
+		}
+		return buf.Bytes()
 	default:
 		fmt.Printf("Found an unexpected type %T", v)
-		return NullBulkString()
+		return NullBulkArray()
 	}
 }
 
