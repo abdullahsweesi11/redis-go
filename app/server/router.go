@@ -49,6 +49,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 		return handlers.HandleIncr(cmd)
 	case "MULTI":
 		return handlers.HandleMulti(cmd)
+	case "EXEC":
+		return handlers.HandleExec(cmd)
 	default:
 		return utils.NullBulkString()
 	}

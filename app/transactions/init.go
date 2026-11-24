@@ -13,8 +13,8 @@ const (
 )
 
 var transactionStateName = map[TransactionState]string{
-	committed:  "ready",
-	processing: "unready",
+	committed:  "stable",
+	processing: "unstable",
 }
 
 type stateContainer struct {

@@ -26,7 +26,7 @@ func HandleMulti(cmd []string) []byte {
 		return utils.EncodeSimpleError("No arguments allowed for MULTI")
 	}
 
-	if transactions.GetTransactionState().ToString() == "unready" {
+	if transactions.GetTransactionState().ToString() == "unstable" {
 		return utils.EncodeSimpleError("Cannot start a new transaction while another one is partially committed")
 	}
 
@@ -36,4 +36,16 @@ func HandleMulti(cmd []string) []byte {
 	}
 
 	return utils.EncodeSimpleString("OK")
+}
+
+func HandleExec(cmd []string) []byte {
+	if len(cmd) != 1 {
+		return utils.EncodeSimpleError("No arguments allowed for EXEC")
+	}
+
+	if transactions.GetTransactionState().ToString() == "stable" {
+		return utils.EncodeSimpleError("EXEC without MULTI")
+	}
+
+	return utils.NullBulkString()
 }
