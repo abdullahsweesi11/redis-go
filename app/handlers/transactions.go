@@ -60,3 +60,15 @@ func HandleExec(conn net.Conn, cmd []string, dispatchFunc func(conn net.Conn, cm
 
 	return results.Bytes()
 }
+
+func HandleDiscard(conn net.Conn, cmd []string) []byte {
+	if len(cmd) != 1 {
+		return utils.EncodeSimpleError("No arguments allowed for DISCARD")
+	}
+
+	if err := transactions.GetState(conn).DiscardTransaction(); err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	}
+
+	return utils.EncodeSimpleString("OK")
+}

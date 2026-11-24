@@ -59,6 +59,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 		return handlers.HandleMulti(conn, cmd)
 	case "EXEC":
 		return handlers.HandleExec(conn, cmd, dispatchCommand)
+	case "DISCARD":
+		return handlers.HandleDiscard(conn, cmd)
 	default:
 		return utils.NullBulkString()
 	}
@@ -66,7 +68,7 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 
 func checkForTransaction(cmdName string) bool {
 	switch cmdName {
-	case "MULTI", "EXEC":
+	case "MULTI", "EXEC", "DISCARD":
 		return false
 	default:
 		return true

@@ -114,6 +114,22 @@ func (sc *stateContainer) ExecuteTransaction() ([][]string, error) {
 	return sc.queue, nil
 }
 
+func (sc *stateContainer) DiscardTransaction() error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	if sc.ToString() == "stable" {
+		return errors.New("DISCARD without MULTI")
+	}
+
+	_, err := sc.toggleLocked()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (sc *stateContainer) InsertToQueue(cmd []string) error {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
