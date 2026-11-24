@@ -192,7 +192,6 @@ func GetEntriesAfterFromList(keyList, iDList []string, inclusive bool) ([][]any,
 		}
 
 		entries := stream.Entries
-		fmt.Println(entries)
 
 		milliseconds, sequence, err := ParseStreamEntryID(entryID, &entries, false)
 		if err != nil {
@@ -204,8 +203,6 @@ func GetEntriesAfterFromList(keyList, iDList []string, inclusive bool) ([][]any,
 		entryList := intermediate[i][1].([]any)
 
 		for _, entry := range entries {
-			fmt.Println(entry.ID)
-			fmt.Println(*milliseconds, *sequence)
 			if (!inclusive && entry.IsAfter(milliseconds, sequence)) || (inclusive && entry.IsEqualOrAfter(milliseconds, sequence)) {
 				numMatchedEntries += 1
 				fields := make([]string, 0, len(entry.Fields)*2)

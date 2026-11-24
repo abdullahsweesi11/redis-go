@@ -47,6 +47,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	// Transaction handlers
 	case "INCR":
 		return handlers.HandleIncr(cmd)
+	case "MULTI":
+		return handlers.HandleMulti(cmd)
 	default:
 		return utils.NullBulkString()
 	}
