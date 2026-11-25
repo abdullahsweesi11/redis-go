@@ -181,6 +181,10 @@ func NullBulkArray() []byte {
 	return []byte("*-1\r\n")
 }
 
+func EncodeEmptyBulkArray() []byte {
+	return []byte("*0\r\n")
+}
+
 func EncodeSimpleError(message string) []byte {
 	var result bytes.Buffer
 	fmt.Fprintf(&result, "-ERR %s\r\n", message)

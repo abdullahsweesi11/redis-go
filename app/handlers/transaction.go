@@ -48,7 +48,7 @@ func HandleExec(conn net.Conn, cmd []string, dispatchFunc func(conn net.Conn, cm
 	}
 
 	if len(queuedCommands) == 0 {
-		return []byte("*0\r\n")
+		return utils.EncodeEmptyBulkArray()
 	}
 
 	var results bytes.Buffer
