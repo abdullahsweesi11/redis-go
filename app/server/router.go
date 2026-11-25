@@ -61,6 +61,9 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 		return handlers.HandleExec(conn, cmd, dispatchCommand)
 	case "DISCARD":
 		return handlers.HandleDiscard(conn, cmd)
+	// List handlers
+	case "RPUSH":
+		return handlers.HandleRPush(cmd)
 	default:
 		return utils.NullBulkString()
 	}
