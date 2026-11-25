@@ -59,10 +59,20 @@ func HandleLRange(cmd []string) []byte {
 		return utils.EncodeSimpleError("Value already exists but is not type list")
 	}
 
+	// convert negative indices
+	if start < 0 {
+		start = len(list) + start
+	}
+	if stop < 0 {
+		stop = len(list) + stop
+	}
+
+	// check for out-of-bounds
 	if start >= min(stop, len(list)) {
 		return utils.EncodeEmptyBulkArray()
 	} else {
 		stop = min(stop, len(list)-1)
+		start = max(0, start)
 	}
 
 	return utils.EncodeBulkArray(list[start : stop+1])
