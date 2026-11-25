@@ -7,7 +7,7 @@ import (
 	"github.com/codecrafters-io/redis-starter-go/app/store"
 )
 
-func AppendToList(key, val string) (int, error) {
+func AppendToList(key string, values []string) (int, error) {
 	entry, exists := store.StoreGet(key)
 	if !exists {
 		return -1, errors.New("Entry does not exist")
@@ -18,10 +18,11 @@ func AppendToList(key, val string) (int, error) {
 		return -1, fmt.Errorf("Expected list value but found type %T", list)
 	}
 
-	list = append(list, val)
+	list = append(list, values...)
 	entry.Value = list
 
 	store.StoreSetEntry(key, *entry)
 
+	fmt.Println(list, len(list))
 	return len(list), nil
 }
