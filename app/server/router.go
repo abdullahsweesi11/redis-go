@@ -64,6 +64,8 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	// List handlers
 	case "RPUSH":
 		return handlers.HandleRPush(cmd)
+	case "LPUSH":
+		return handlers.HandleLPush(cmd)
 	case "LRANGE":
 		return handlers.HandleLRange(cmd)
 	default:
