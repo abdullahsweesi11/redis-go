@@ -18,20 +18,20 @@ func HandleRPush(cmd []string) []byte {
 	values := cmd[2:]
 
 	entry, exists := store.StoreGet(key)
-
-	var result int
 	if !exists {
 		store.StoreSet(key, values, "list", nil)
-		result = len(values)
-	} else if entry.Type != "list" {
+		return utils.EncodeInteger(len(values))
+	}
+	_, ok := entry.Value.([]string)
+	if !ok {
 		return utils.EncodeSimpleError("Value already exists but is not type list")
-	} else if n, err := lists.AppendToList(key, values); err != nil {
-		return utils.EncodeSimpleError(err.Error())
-	} else {
-		result = n
 	}
 
-	return utils.EncodeInteger(result)
+	if n, err := lists.AppendToList(key, values); err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	} else {
+		return utils.EncodeInteger(n)
+	}
 }
 
 func HandleLPush(cmd []string) []byte {
@@ -44,20 +44,19 @@ func HandleLPush(cmd []string) []byte {
 	slices.Reverse(values)
 
 	entry, exists := store.StoreGet(key)
-
-	var result int
 	if !exists {
 		store.StoreSet(key, values, "list", nil)
-		result = len(values)
-	} else if entry.Type != "list" {
+		return utils.EncodeInteger(len(values))
+	}
+	_, ok := entry.Value.([]string)
+	if !ok {
 		return utils.EncodeSimpleError("Value already exists but is not type list")
-	} else if n, err := lists.PrependToList(key, values); err != nil {
+	}
+	if n, err := lists.PrependToList(key, values); err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	} else {
-		result = n
+		return utils.EncodeInteger(n)
 	}
-
-	return utils.EncodeInteger(result)
 }
 
 func HandleLRange(cmd []string) []byte {
@@ -101,4 +100,23 @@ func HandleLRange(cmd []string) []byte {
 	}
 
 	return utils.EncodeBulkArray(list[start : stop+1])
+}
+
+func HandleLLEN(cmd []string) []byte {
+	if len(cmd) != 2 {
+		return utils.EncodeSimpleError("Invalid number of arguments for LLEN")
+	}
+
+	key := cmd[1]
+
+	entry, exists := store.StoreGet(key)
+	if !exists {
+		return utils.EncodeInteger(0)
+	}
+	list, ok := entry.Value.([]string)
+	if !ok || entry.Type != "list" {
+		return utils.EncodeSimpleError("Value already exists but is not type list")
+	}
+
+	return utils.EncodeInteger(len(list))
 }
