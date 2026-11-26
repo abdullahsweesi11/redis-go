@@ -17,16 +17,6 @@ func HandleRPush(cmd []string) []byte {
 	key := cmd[1]
 	values := cmd[2:]
 
-	entry, exists := store.StoreGet(key)
-	if !exists {
-		store.StoreSet(key, values, "list", nil)
-		return utils.EncodeInteger(len(values))
-	}
-	_, ok := entry.Value.([]string)
-	if !ok {
-		return utils.EncodeSimpleError("Value already exists but is not type list")
-	}
-
 	if n, err := lists.AppendToList(key, values); err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	} else {
@@ -43,15 +33,6 @@ func HandleLPush(cmd []string) []byte {
 	values := cmd[2:]
 	slices.Reverse(values)
 
-	entry, exists := store.StoreGet(key)
-	if !exists {
-		store.StoreSet(key, values, "list", nil)
-		return utils.EncodeInteger(len(values))
-	}
-	_, ok := entry.Value.([]string)
-	if !ok {
-		return utils.EncodeSimpleError("Value already exists but is not type list")
-	}
 	if n, err := lists.PrependToList(key, values); err != nil {
 		return utils.EncodeSimpleError(err.Error())
 	} else {
@@ -102,7 +83,7 @@ func HandleLRange(cmd []string) []byte {
 	return utils.EncodeBulkArray(list[start : stop+1])
 }
 
-func HandleLLEN(cmd []string) []byte {
+func HandleLLen(cmd []string) []byte {
 	if len(cmd) != 2 {
 		return utils.EncodeSimpleError("Invalid number of arguments for LLEN")
 	}
@@ -119,4 +100,30 @@ func HandleLLEN(cmd []string) []byte {
 	}
 
 	return utils.EncodeInteger(len(list))
+}
+
+func HandleLPop(cmd []string) []byte {
+	if len(cmd) < 2 || len(cmd) > 3 {
+		return utils.EncodeSimpleError("Invalid number of arguments for LPOP")
+	}
+
+	key := cmd[1]
+	count := 1
+	if len(cmd) == 3 {
+		var err error
+		count, err = strconv.Atoi(cmd[2])
+		if err != nil {
+			return utils.EncodeSimpleError("Error occurred while parsing number of elements to pop")
+		}
+	}
+
+	if elems, err := lists.PopFromList(key, count); err != nil {
+		return utils.EncodeSimpleError(err.Error())
+	} else if elems == nil {
+		return utils.NullBulkArray()
+	} else if len(elems) == 1 {
+		return utils.EncodeBulkString(elems[0])
+	} else {
+		return utils.EncodeBulkArray(elems)
+	}
 }

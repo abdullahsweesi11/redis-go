@@ -69,7 +69,9 @@ func dispatchCommand(conn net.Conn, cmd []string) []byte {
 	case "LRANGE":
 		return handlers.HandleLRange(cmd)
 	case "LLEN":
-		return handlers.HandleLLEN(cmd)
+		return handlers.HandleLLen(cmd)
+	case "LPOP":
+		return handlers.HandleLPop(cmd)
 	default:
 		return utils.NullBulkString()
 	}
